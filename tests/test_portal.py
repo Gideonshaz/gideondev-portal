@@ -216,3 +216,83 @@ def test_keys_from_another_secret_do_not_crash_the_page(admin):
                      ("f" * 64, pid))
     page = admin.get("/projects/gatepasskiosk")
     assert page.status_code == 200 and b"unreadable" in page.data
+
+
+# ------------------------------------------------------- old server running alongside / after
+def _old_server_insert(key, device=None, product="GatePassKiosk"):
+    """Exactly what the OLD license server writes: no project_id, device in licenses.device_id."""
+    now = datetime.now(timezone.utc)
+    with psycopg.connect(DB) as conn:
+        conn.execute("""INSERT INTO licenses (key_hash, key_ciphertext, product, months, duration,
+                        activated_at, expires_at, device_id)
+                        VALUES (%s,'x',%s,12,'1 year',%s,%s,%s)""",
+                     (hashlib.sha256(key.encode()).hexdigest(), product,
+                      now if device else None, now + timedelta(days=300) if device else None, device))
+
+
+def test_key_created_by_old_server_after_migration_verifies(client):
+    assert client.get("/health").status_code == 200  # new schema already in place
+    key = "GP-" + "CD34" * 12
+    _old_server_insert(key)  # old server creates a fresh, unactivated key afterwards
+    r = verify(client, key, "GatePassKiosk", DEVICE_A, "/api/verify")
+    assert r.get_json()["valid"] is True
+    assert set(r.get_json()) == {"valid", "activated_at", "expires_at"}
+    assert verify(client, key, "GatePassKiosk", DEVICE_B, "/api/verify").get_json()["valid"] is False
+
+
+def test_device_bound_by_old_server_after_migration_is_respected(client):
+    assert client.get("/health").status_code == 200
+    key = "GP-" + "EF56" * 12
+    _old_server_insert(key, device=DEVICE_A)  # old server activated it on computer A
+    assert verify(client, key, "GatePassKiosk", DEVICE_A, "/api/verify").get_json()["valid"] is True
+    r = verify(client, key, "GatePassKiosk", DEVICE_B, "/api/verify")
+    assert r.get_json() == {"valid": False, "reason": "License belongs to another computer"}
+
+
+def test_startup_sync_is_idempotent_and_respects_reset(admin):
+    key = "GP-" + "AB90" * 12
+    _old_server_insert(key, device=DEVICE_A)
+    for _ in range(2):
+        portal.app.config["SCHEMA_READY"] = False
+        assert admin.get("/health").status_code == 200
+    with psycopg.connect(DB) as conn:
+        assert conn.execute("SELECT count(*) FROM activations").fetchone()[0] == 1
+        lic = conn.execute("SELECT id FROM licenses").fetchone()[0]
+    assert post(admin, f"/licenses/{lic}/reset-devices").status_code == 302
+    portal.app.config["SCHEMA_READY"] = False  # restart after the reset must not resurrect device A
+    assert admin.get("/health").status_code == 200
+    with psycopg.connect(DB) as conn:
+        assert conn.execute("SELECT count(*) FROM activations").fetchone()[0] == 0
+
+
+# ------------------------------------------------------------------ robustness
+def test_concurrent_activations_allow_exactly_one_computer(admin):
+    import threading
+    key = make_key(admin)
+    results = []
+
+    def go(device):
+        c = portal.app.test_client()
+        c.environ_base["wsgi.url_scheme"] = "https"
+        results.append(verify(c, key, "gatepasskiosk", device, "/api/verify").get_json()["valid"])
+
+    threads = [threading.Thread(target=go, args=(d,)) for d in (DEVICE_A, DEVICE_B, DEVICE_C) * 3]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert results.count(True) == 3  # all calls from the one winning computer
+    with psycopg.connect(DB) as conn:
+        assert conn.execute("SELECT count(*) FROM activations").fetchone()[0] == 1
+
+
+def test_database_failure_never_reports_a_valid_license(admin, monkeypatch):
+    key = make_key(admin)
+    assert verify(admin, key, "gatepasskiosk", DEVICE_A, "/api/verify").get_json()["valid"] is True
+
+    def boom():
+        raise psycopg.OperationalError("database unreachable")
+
+    monkeypatch.setattr(portal, "db", boom)
+    portal.app.config["PROPAGATE_EXCEPTIONS"] = False
+    r = verify(admin, key, "gatepasskiosk", DEVICE_A, "/api/verify")
+    assert r.status_code == 500
+    assert not (r.get_json(silent=True) or {}).get("valid")

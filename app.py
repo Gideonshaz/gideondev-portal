@@ -59,6 +59,20 @@ def db():
     return psycopg.connect(os.environ["DATABASE_URL"], autocommit=False)
 
 
+def sync_legacy(conn, digest=None):
+    """Adopt rows written by the OLD license server (no project_id, device kept in
+    licenses.device_id). Idempotent and additive, so it is safe to run any time, which keeps
+    a rollback to the old server and a later switch forward lossless."""
+    extra, args = (" AND key_hash=%s", (digest,)) if digest else ("", ())
+    conn.execute("""UPDATE licenses SET project_id = p.id FROM projects p
+                    WHERE licenses.project_id IS NULL AND p.slug = lower(licenses.product)"""
+                 + extra.replace("key_hash", "licenses.key_hash"), args)
+    conn.execute("""INSERT INTO activations (license_id, device_id, first_seen, last_seen)
+                    SELECT id, device_id, COALESCE(activated_at, now()), COALESCE(activated_at, now())
+                    FROM licenses WHERE device_id IS NOT NULL""" + extra + """
+                    ON CONFLICT (license_id, device_id) DO NOTHING""", args)
+
+
 def migrate():
     with db() as conn:
         conn.execute("SELECT pg_advisory_xact_lock(727401)")  # safe with many workers
@@ -69,6 +83,7 @@ def migrate():
             if name not in done:
                 conn.execute(sql)
                 conn.execute("INSERT INTO schema_migrations (name) VALUES (%s)", (name,))
+        sync_legacy(conn)
 
 
 @app.before_request
@@ -183,6 +198,7 @@ def run_verify(key, slug, device):
     """Shared by the legacy and v1 endpoints. Returns (result dict, token, offline_until)."""
     digest = hashlib.sha256(key.encode()).hexdigest()
     with db() as conn:
+        sync_legacy(conn, digest)  # picks up a key the old server created or bound meanwhile
         row = conn.execute("""SELECT l.id, p.slug, l.months, l.activated_at, l.expires_at,
                                      l.revoked_at, l.max_devices
                               FROM licenses l JOIN projects p ON p.id = l.project_id
