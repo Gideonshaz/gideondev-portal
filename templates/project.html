@@ -72,7 +72,7 @@
     <tbody>
     {% for l in licenses %}
       <tr>
-        <td class="clip"><code>{{ l.key }}</code></td>
+        <td class="clip">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">unreadable (stored with a different encryption secret)</span>{% endif %}</td>
         <td>{{ l.duration }}</td>
         <td>
           {% if l.revoked_at %}revoked

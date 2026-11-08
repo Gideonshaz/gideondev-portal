@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import psycopg
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from flask import (Flask, abort, flash, jsonify, redirect, render_template,
@@ -126,6 +126,14 @@ def headers(response):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Vary"] = "Origin"
     return response
+
+
+def show_key(ciphertext):
+    """Decrypt a stored key for display; None if it was encrypted with another secret."""
+    try:
+        return fernet.decrypt(ciphertext.encode()).decode()
+    except InvalidToken:
+        return None
 
 
 @app.get("/health")
@@ -386,7 +394,7 @@ def project_page(slug):
                 SELECT a.license_id, a.device_id, a.last_seen FROM activations a
                 JOIN licenses l ON l.id=a.license_id WHERE l.project_id=%s""", (p["id"],)):
             devices.setdefault(lid, []).append(dict(id=dev[:10] + "…", seen=seen))
-    licenses = [dict(id=r[0], key=fernet.decrypt(r[1].encode()).decode(), duration=r[2],
+    licenses = [dict(id=r[0], key=show_key(r[1]), duration=r[2],
                      max_devices=r[3], activated_at=r[4], expires_at=r[5], revoked_at=r[6],
                      devices=devices.get(r[0], [])) for r in lic_rows]
     releases = [dict(id=r[9], version=r[0], channel=r[1], download_url=r[2], notes=r[5],

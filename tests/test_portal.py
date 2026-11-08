@@ -206,3 +206,13 @@ def test_admin_pages_render(admin):
     assert b"My New App" in admin.get("/").data
     assert admin.get("/projects/missing").status_code == 404
     assert "default-src 'self'" in page.headers["Content-Security-Policy"]
+
+
+def test_keys_from_another_secret_do_not_crash_the_page(admin):
+    with psycopg.connect(DB) as conn:
+        pid = conn.execute("SELECT id FROM projects WHERE slug='gatepasskiosk'").fetchone()[0]
+        conn.execute("""INSERT INTO licenses (key_hash, key_ciphertext, product, months, duration, project_id)
+                        VALUES (%s, 'not-a-valid-token', 'GatePassKiosk', 12, '1 year', %s)""",
+                     ("f" * 64, pid))
+    page = admin.get("/projects/gatepasskiosk")
+    assert page.status_code == 200 and b"unreadable" in page.data
