@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>Projects</h1>
+<section class="card">
+  <table>
+    <thead><tr><th>Project</th><th>Public</th><th>Releases</th><th>Active keys</th><th>Devices</th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="{{ url_for('project_page', slug=p.slug) }}">{{ p.name }}</a> <span class="muted">{{ p.slug }}</span></td>
+        <td>{{ "yes" if p.is_public else "no" }}</td>
+        <td>{{ p.releases }}</td>
+        <td>{{ p.licenses }}</td>
+        <td>{{ p.devices }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">No projects yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Add a project</h2>
+  <form method="post" action="{{ url_for('project_create') }}" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Name <input name="name" maxlength="80" required></label>
+    <label>Slug <input name="slug" maxlength="49" pattern="[a-z0-9][a-z0-9-]{1,48}" placeholder="my-app" required></label>
+    <button>Create</button>
+  </form>
+</section>
+{% endblock %}

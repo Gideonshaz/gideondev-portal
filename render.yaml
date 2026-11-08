@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: gideondev-portal
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL          # Neon connection string (sslmode=require)
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: KEY_ENCRYPTION_SECRET # SAME value as the old license server, or old keys can't be shown
+        sync: false
+      - key: SIGNING_PRIVATE_KEY   # optional: enables signed offline tokens
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://gideonshaz.github.io
+      - key: OFFLINE_GRACE_DAYS
+        value: "7"
