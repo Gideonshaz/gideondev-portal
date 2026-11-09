@@ -117,4 +117,16 @@ MIGRATIONS = [
             UNIQUE (project_id, gh_id)
         );
     """),
+    ("005_github_app", """
+        CREATE TABLE IF NOT EXISTS github_app (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            app_id BIGINT NOT NULL,
+            slug TEXT NOT NULL,
+            html_url TEXT NOT NULL DEFAULT '',
+            pem_enc TEXT NOT NULL,
+            webhook_secret_enc TEXT NOT NULL,
+            installation_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """),
 ]

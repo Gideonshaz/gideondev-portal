@@ -21,7 +21,7 @@ def rel(gid, tag, body="notes", pre=False, draft=False, assets=(("Setup.exe", 20
 def fake_github(monkeypatch):
     state = {"releases": [], "fail": None, "calls": 0}
 
-    def fetch(repo):
+    def fetch(repo, tok=None):
         state["calls"] += 1
         if state["fail"]:
             raise github_sync.GitHubError(state["fail"])
@@ -113,7 +113,7 @@ def test_missing_token_is_reported(admin, monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     connect(admin)
     page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
-    assert "GITHUB_TOKEN is not set" in page and "sync failed" in page
+    assert "GitHub is not connected yet" in page and "sync failed" in page
 
 
 def test_github_routes_need_login_and_csrf(client, fake_github):
@@ -145,6 +145,7 @@ def test_webhook_verifies_signature_and_syncs(admin, fake_github, monkeypatch):
     body = json.dumps({"action": "published",
                        "repository": {"full_name": "gideonshaz/gatepasskiosk-windows"}}).encode()
     h = {"X-GitHub-Event": "release", "Content-Type": "application/json"}
+    monkeypatch.delenv("GITHUB_WEBHOOK_SECRET", raising=False)
     assert admin.post("/api/github/webhook", data=body, headers=h).status_code == 503  # no secret
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "whsec")
     assert admin.post("/api/github/webhook", data=body,

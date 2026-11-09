@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}GitHub · GideonDev Portal{% endblock %}
+{% block body %}
+<h1>Almost done</h1>
+<section class="card">
+  <p>{{ "GitHub created the app." if step == "created" else "GitHub installed the app." }} Tap Finish to save it in your portal.</p>
+  <p><a class="btn" href="{{ href }}">Finish</a></p>
+</section>
+{% endblock %}

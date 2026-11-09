@@ -161,8 +161,9 @@ def set_view():
 def headers(response):
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
+    form_action = "'self' https://github.com" if getattr(request, "github_form", False) else "'self'"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; style-src 'self'; form-action 'self'; frame-ancestors 'none'")
+        f"default-src 'self'; style-src 'self'; form-action {form_action}; frame-ancestors 'none'")
     origin = request.headers.get("Origin")
     if (request.method in ("GET", "OPTIONS") and request.path.startswith("/api/v1/")
             and origin in CORS_ORIGINS):
@@ -504,11 +505,13 @@ def project_page(slug):
     if gh_pre and gh_latest and vkey(gh_pre["version"]) <= vkey(gh_latest["version"]):
         gh_pre = None  # only show a prerelease that is newer than the latest stable
     portal_versions = {r["version"] for r in releases}
+    with db() as conn:
+        gh_connected = bool(github_sync.env_token()) or bool(github_sync.load_app(conn, fernet))
     return render_template("project.html", p=p, releases=releases, licenses=licenses,
                            durations=DURATIONS, stats=stats, latest=latest, q=q,
                            status_filter=status_filter, gh=gh, gh_latest=gh_latest,
                            gh_pre=gh_pre, portal_versions=portal_versions,
-                           gh_token_set=bool(github_sync.token()))
+                           gh_connected=gh_connected)
 
 
 @app.post("/projects/<slug>/edit")
@@ -548,10 +551,123 @@ def project_github(slug):
                      (repo, prefix, p["id"]))
         if repo:
             p.update(github_repo=repo, github_tag_prefix=prefix)
-            ok, msg = github_sync.sync_project(conn, p)
+            ok, msg = github_sync.sync_project(conn, p, fernet)
     flash(("Connected and synced: " if ok else "Saved, but sync failed: ") + msg if repo
           else "GitHub repository disconnected. Imported history was kept.")
     return redirect(url_for("project_page", slug=slug) + "#github")
+
+
+# ---------------------------------------------------------------- GitHub connection (one-time)
+def _github_status(conn):
+    """(app or None, repos list, error text). Never raises."""
+    app_row = github_sync.load_app(conn, fernet)
+    if not app_row:
+        return None, [], ""
+    try:
+        return app_row, github_sync.installation_repos(github_sync.installation_token(app_row)), ""
+    except github_sync.GitHubError as e:
+        return app_row, [], str(e)
+
+
+@app.get("/github")
+@admin_only
+def github_page():
+    with db() as conn:
+        app_row, repos, error = _github_status(conn)
+    base = request.host_url.rstrip("/")
+    host = request.host.split(".")[0][:24]
+    manifest = {
+        "name": f"GideonDev {host}"[:34],
+        "url": base,
+        "hook_attributes": {"url": base + url_for("github_webhook"), "active": True},
+        "redirect_url": base + url_for("github_app_created"),
+        "setup_url": base + url_for("github_installed"),
+        "setup_on_update": True,
+        "public": False,
+        "default_permissions": {"contents": "read", "metadata": "read"},
+        "default_events": ["release"],
+    }
+    session["gh_state"] = secrets.token_urlsafe(24)
+    request.github_form = True
+    return render_template("github.html", app_row=app_row, repos=repos, error=error,
+                           env_token=bool(github_sync.env_token()),
+                           manifest=json.dumps(manifest), state=session["gh_state"])
+
+
+@app.get("/github/app-created")
+def github_app_created():
+    """GitHub redirects here after the app is created. The session cookie is SameSite=Strict,
+    so it is not sent on this cross-site redirect: show a same-site 'Finish' link instead."""
+    code = request.args.get("code", "")[:100]
+    state = request.args.get("state", "")[:100]
+    return render_template("github_continue.html", step="created",
+                           href=url_for("github_app_created_finish", code=code, state=state))
+
+
+@app.get("/github/app-created/finish")
+@admin_only
+def github_app_created_finish():
+    state = request.args.get("state", "")
+    if not session.get("gh_state") or not hmac.compare_digest(session["gh_state"], state):
+        flash("That GitHub link expired. Please click Connect GitHub again.")
+        return redirect(url_for("github_page"))
+    session.pop("gh_state", None)
+    try:
+        data = github_sync.convert_manifest(request.args.get("code", ""))
+    except github_sync.GitHubError as e:
+        flash(f"Could not finish creating the GitHub app: {e}")
+        return redirect(url_for("github_page"))
+    with db() as conn:
+        conn.execute("DELETE FROM github_app")
+        conn.execute("""INSERT INTO github_app (id, app_id, slug, html_url, pem_enc, webhook_secret_enc)
+                        VALUES (1, %s, %s, %s, %s, %s)""",
+                     (int(data["id"]), data["slug"], data.get("html_url", ""),
+                      fernet.encrypt(data["pem"].encode()).decode(),
+                      fernet.encrypt((data.get("webhook_secret") or "").encode()).decode()))
+    github_sync._cache.clear()
+    return redirect(f"https://github.com/apps/{data['slug']}/installations/new")
+
+
+@app.get("/github/installed")
+def github_installed():
+    iid = request.args.get("installation_id", "")
+    return render_template("github_continue.html", step="installed",
+                           href=url_for("github_installed_finish", installation_id=iid[:20]))
+
+
+@app.get("/github/installed/finish")
+@admin_only
+def github_installed_finish():
+    iid = request.args.get("installation_id", "")
+    if not iid.isdigit():
+        flash("GitHub did not send an installation id. Install the app again.")
+        return redirect(url_for("github_page"))
+    with db() as conn:
+        app_row = github_sync.load_app(conn, fernet)
+        if not app_row or app_row["broken"]:
+            flash("No GitHub app found. Click Connect GitHub first.")
+            return redirect(url_for("github_page"))
+        try:
+            iid = github_sync.check_installation(app_row, iid)  # must belong to our app
+        except github_sync.GitHubError as e:
+            flash(f"Could not confirm the installation: {e}")
+            return redirect(url_for("github_page"))
+        conn.execute("UPDATE github_app SET installation_id=%s WHERE id=1", (iid,))
+    github_sync._cache.clear()
+    flash("GitHub connected. Now open each project and pick its repository.")
+    return redirect(url_for("github_page"))
+
+
+@app.post("/github/disconnect")
+@admin_only
+def github_disconnect():
+    csrf()
+    with db() as conn:
+        conn.execute("DELETE FROM github_app")
+    github_sync._cache.clear()
+    flash("Disconnected from the portal. Also delete the app on GitHub (Settings › Developer "
+          "settings › GitHub Apps) if you no longer need it. Imported history was kept.")
+    return redirect(url_for("github_page"))
 
 
 @app.post("/projects/<slug>/github/sync")
@@ -560,7 +676,7 @@ def project_github_sync(slug):
     csrf()
     with db() as conn:
         p = get_project(conn, slug)
-        ok, msg = github_sync.sync_project(conn, p)
+        ok, msg = github_sync.sync_project(conn, p, fernet)
     flash(("Sync complete: " if ok else "Sync failed: ") + msg)
     return redirect(url_for("project_page", slug=slug) + "#github")
 
@@ -569,6 +685,10 @@ def project_github_sync(slug):
 def github_webhook():
     """GitHub release webhook. Verified with GITHUB_WEBHOOK_SECRET; re-syncs linked projects."""
     secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    if not secret:
+        with db() as conn:
+            app_row = github_sync.load_app(conn, fernet)
+        secret = app_row["webhook_secret"] if app_row else ""
     if not secret:
         return jsonify(error="webhook disabled"), 503
     body = request.get_data(cache=False)
@@ -589,7 +709,7 @@ def github_webhook():
         slugs = [r[0] for r in conn.execute(
             "SELECT slug FROM projects WHERE lower(github_repo)=lower(%s)", (repo,))]
         for slug in slugs:
-            ok, _ = github_sync.sync_project(conn, get_project(conn, slug))
+            ok, _ = github_sync.sync_project(conn, get_project(conn, slug), fernet)
             synced.append(dict(project=slug, ok=ok))
     return jsonify(ok=True, synced=synced)
 

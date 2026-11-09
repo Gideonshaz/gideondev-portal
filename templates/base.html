@@ -18,6 +18,8 @@
     <a class="nav{% if request.endpoint == 'dashboard' %} on{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
     <h4>Projects</h4>
     {% for sp in side_projects %}<a class="nav{% if request.view_args and request.view_args.get('slug') == sp.slug %} on{% endif %}" href="{{ url_for('project_page', slug=sp.slug) }}">{{ sp.name }}</a>{% endfor %}
+    <h4>Settings</h4>
+    <a class="nav{% if request.endpoint == 'github_page' %} on{% endif %}" href="{{ url_for('github_page') }}">GitHub connection</a>
     <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost">Log out</button></form>
   </aside>
   {% endif %}

@@ -27,7 +27,8 @@
   {% else %}
     <p class="muted">Not connected. Link this project to a GitHub repository to import its release history. Read-only: nothing is changed on GitHub.</p>
   {% endif %}
-  {% if not gh_token_set %}<p class="flash">The server has no GitHub token yet (GITHUB_TOKEN), so syncing cannot work.</p>{% endif %}
+  {% if not gh_connected %}<p class="flash">GitHub isn't connected yet. <a href="{{ url_for('github_page') }}">Connect GitHub</a> once, then pick the repository here.</p>
+  {% elif p.gh_sync_ok == false %}<p class="muted">If the connection broke, <a href="{{ url_for('github_page') }}">check the GitHub connection</a>.</p>{% endif %}
   <details{% if not p.github_repo %} open{% endif %}>
     <summary>{{ "Change repository" if p.github_repo else "Connect a repository" }}</summary>
     <form method="post" action="{{ url_for('project_github', slug=p.slug) }}">
