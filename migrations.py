@@ -92,4 +92,29 @@ MIGRATIONS = [
     ("003_license_name", """
         ALTER TABLE licenses ADD COLUMN IF NOT EXISTS assigned_to TEXT NOT NULL DEFAULT '';
     """),
+    ("004_github_releases", """
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo TEXT NOT NULL DEFAULT '';
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_tag_prefix TEXT NOT NULL DEFAULT '';
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS gh_last_sync_at TIMESTAMPTZ;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS gh_sync_ok BOOLEAN;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS gh_sync_message TEXT NOT NULL DEFAULT '';
+        CREATE TABLE IF NOT EXISTS github_releases (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            gh_id BIGINT NOT NULL,
+            repo TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            name TEXT NOT NULL DEFAULT '',
+            version TEXT NOT NULL,
+            body TEXT NOT NULL DEFAULT '',
+            prerelease BOOLEAN NOT NULL DEFAULT false,
+            published_at TIMESTAMPTZ,
+            html_url TEXT NOT NULL DEFAULT '',
+            assets JSONB NOT NULL DEFAULT '[]',
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_synced_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            removed_at TIMESTAMPTZ,
+            UNIQUE (project_id, gh_id)
+        );
+    """),
 ]

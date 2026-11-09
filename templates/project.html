@@ -9,13 +9,69 @@
   <div class="stat"><b>{{ stats.active }}</b><span>Active keys</span></div>
   <div class="stat"><b>{{ stats.unused }}</b><span>Unused keys</span></div>
   <div class="stat"><b>{{ stats.devices }}</b><span>Activated devices</span></div>
-  <div class="stat"><b>{{ latest.version if latest else "—" }}</b><span>Latest release</span></div>
+  <div class="stat"><b>{{ gh_latest.version if gh_latest else (latest.version if latest else "—") }}</b><span>Latest release</span></div>
 </div>
-<p class="jump"><a class="chip" href="#releases">Releases &amp; updates</a> <a class="chip" href="#keys">License keys</a> <a class="chip" href="#details">Details &amp; settings</a></p>
+<p class="jump"><a class="chip" href="#github">GitHub</a> <a class="chip" href="#releases">Releases &amp; updates</a> <a class="chip" href="#keys">License keys</a> <a class="chip" href="#details">Details &amp; settings</a></p>
 
+
+<section class="card" id="github">
+  <h2>GitHub integration</h2>
+  {% if p.github_repo %}
+    <p><b>{{ p.github_repo }}</b>{% if p.github_tag_prefix %} <span class="tag">tags starting “{{ p.github_tag_prefix }}”</span>{% endif %}
+      {% if p.gh_sync_ok %}<span class="tag good">connected</span>{% elif p.gh_sync_ok == false %}<span class="tag bad">sync failed</span>{% else %}<span class="tag">not synced yet</span>{% endif %}</p>
+    <p class="muted">Last sync: {{ p.gh_last_sync_at.strftime("%d %b %Y, %H:%M UTC") if p.gh_last_sync_at else "never" }}{% if p.gh_sync_message %} · {{ p.gh_sync_message }}{% endif %}</p>
+    <form method="post" action="{{ url_for('project_github_sync', slug=p.slug) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button>Sync now</button>
+    </form>
+  {% else %}
+    <p class="muted">Not connected. Link this project to a GitHub repository to import its release history. Read-only: nothing is changed on GitHub.</p>
+  {% endif %}
+  {% if not gh_token_set %}<p class="flash">The server has no GitHub token yet (GITHUB_TOKEN), so syncing cannot work.</p>{% endif %}
+  <details{% if not p.github_repo %} open{% endif %}>
+    <summary>{{ "Change repository" if p.github_repo else "Connect a repository" }}</summary>
+    <form method="post" action="{{ url_for('project_github', slug=p.slug) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="row">
+        <label>Repository <input name="github_repo" value="{{ p.github_repo }}" maxlength="140" placeholder="Gideonshaz/HY-Enhance-Studio"></label>
+        <label>Tag prefix (optional) <input name="github_tag_prefix" value="{{ p.github_tag_prefix }}" maxlength="40" placeholder="only if apps share a repo"></label>
+      </div>
+      <button class="ghost">{{ "Save" if p.github_repo else "Connect & import" }}</button>
+      {% if p.github_repo %}<p class="muted">Clear the repository field and save to disconnect. Imported history stays.</p>{% endif %}
+    </form>
+  </details>
+</section>
 
 <section class="card" id="releases">
   <h2>Releases &amp; updates</h2>
+  {% if gh %}
+  <div class="pstats ghsum">
+    <div class="stat"><b>{{ gh_latest.version if gh_latest else "—" }}</b><span>Latest stable{% if gh_latest and gh_latest.published_at %} · {{ gh_latest.published_at.strftime("%d %b %Y") }}{% endif %}</span></div>
+    <div class="stat"><b>{{ gh_pre.version if gh_pre else "—" }}</b><span>Newer prerelease</span></div>
+  </div>
+  <h3>GitHub release history ({{ gh|length }})</h3>
+  {% for g in gh %}
+  <details class="rel{{ ' dim' if g.removed_at }}">
+    <summary>
+      <b>{{ g.version }}</b>
+      {% if g.removed_at %}<span class="tag bad">removed from GitHub</span>
+      {% elif gh_latest and g.tag == gh_latest.tag %}<span class="tag good">latest</span>{% endif %}
+      {% if g.prerelease %}<span class="tag warn">prerelease</span>{% endif %}
+      {% if g.version in portal_versions %}<span class="tag">also in portal list</span>{% endif %}
+      <span class="muted">{{ g.published_at.strftime("%d %b %Y") if g.published_at else "" }}</span>
+    </summary>
+    <p class="muted">{{ g.name or g.tag }} · tag <code>{{ g.tag }}</code>{% if g.html_url %} · <a href="{{ g.html_url }}" rel="noopener noreferrer">open on GitHub</a>{% endif %}</p>
+    {% if g.body %}<div class="notes">{{ g.body }}</div>{% else %}<p class="muted">No release notes on GitHub.</p>{% endif %}
+    {% if g.assets %}
+    <ul class="assets">
+      {% for a in g.assets %}<li><span>{{ a.name }}</span><span class="muted">{{ "%.1f MB"|format(a.size / 1048576) if a.size >= 1048576 else "%d KB"|format((a.size / 1024)|round(0, "ceil")) }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+  </details>
+  {% endfor %}
+  <h3>Portal-managed releases</h3>
+  <p class="muted">Used by the portal's own update API. Separate from the GitHub list above.</p>
+  {% endif %}
   <table class="stack">
     <thead><tr><th>Version</th><th>Channel</th><th>Link</th><th>Date</th><th></th></tr></thead>
     <tbody>

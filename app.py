@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import psycopg
+import github_sync
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -184,12 +185,14 @@ def health():
 
 
 def get_project(conn, slug):
-    row = conn.execute("""SELECT id, slug, name, description, repo_url, is_public
+    row = conn.execute("""SELECT id, slug, name, description, repo_url, is_public, github_repo,
+                                 github_tag_prefix, gh_last_sync_at, gh_sync_ok, gh_sync_message
                           FROM projects WHERE slug=%s""", (slug,)).fetchone()
     if not row:
         abort(404)
     return dict(id=row[0], slug=row[1], name=row[2], description=row[3],
-                repo_url=row[4], is_public=row[5])
+                repo_url=row[4], is_public=row[5], github_repo=row[6], github_tag_prefix=row[7],
+                gh_last_sync_at=row[8], gh_sync_ok=row[9], gh_sync_message=row[10])
 
 
 def release_dict(r):
@@ -486,9 +489,26 @@ def project_page(slug):
     releases = [dict(id=r[9], version=r[0], channel=r[1], download_url=r[2], notes=r[5],
                      mandatory=r[6], yanked=r[8], created_at=r[7]) for r in rels]
     latest = next((r for r in releases if not r["yanked"]), None)
+    gh = []
+    with db() as conn:
+        for g in conn.execute("""SELECT tag, name, version, body, prerelease, published_at,
+                                        html_url, assets, removed_at
+                                 FROM github_releases WHERE project_id=%s""", (p["id"],)):
+            gh.append(dict(tag=g[0], name=g[1], version=g[2], body=g[3], prerelease=g[4],
+                           published_at=g[5], html_url=g[6], assets=g[7] or [],
+                           removed_at=g[8]))
+    gh.sort(key=lambda g: (vkey(g["version"]), g["published_at"] or now), reverse=True)
+    live = [g for g in gh if not g["removed_at"]]
+    gh_latest = next((g for g in live if not g["prerelease"]), None)
+    gh_pre = next((g for g in live if g["prerelease"]), None)
+    if gh_pre and gh_latest and vkey(gh_pre["version"]) <= vkey(gh_latest["version"]):
+        gh_pre = None  # only show a prerelease that is newer than the latest stable
+    portal_versions = {r["version"] for r in releases}
     return render_template("project.html", p=p, releases=releases, licenses=licenses,
                            durations=DURATIONS, stats=stats, latest=latest, q=q,
-                           status_filter=status_filter)
+                           status_filter=status_filter, gh=gh, gh_latest=gh_latest,
+                           gh_pre=gh_pre, portal_versions=portal_versions,
+                           gh_token_set=bool(github_sync.token()))
 
 
 @app.post("/projects/<slug>/edit")
@@ -509,6 +529,69 @@ def project_edit(slug):
         conn.execute("UPDATE licenses SET product=%s WHERE project_id=%s", (name, p["id"]))
     flash("Project saved.")
     return redirect(url_for("project_page", slug=slug))
+
+
+@app.post("/projects/<slug>/github")
+@admin_only
+def project_github(slug):
+    """Connect or disconnect a GitHub repository (admin only). Imported history is kept."""
+    csrf()
+    repo = request.form.get("github_repo", "").strip().removeprefix("https://github.com/")
+    repo = repo.removesuffix(".git").strip("/")
+    prefix = request.form.get("github_tag_prefix", "").strip()[:40]
+    if repo and not github_sync.REPO_RE.match(repo):
+        flash("Repository must look like owner/name, e.g. Gideonshaz/HY-Enhance-Studio.")
+        return redirect(url_for("project_page", slug=slug) + "#github")
+    with db() as conn:
+        p = get_project(conn, slug)
+        conn.execute("UPDATE projects SET github_repo=%s, github_tag_prefix=%s WHERE id=%s",
+                     (repo, prefix, p["id"]))
+        if repo:
+            p.update(github_repo=repo, github_tag_prefix=prefix)
+            ok, msg = github_sync.sync_project(conn, p)
+    flash(("Connected and synced: " if ok else "Saved, but sync failed: ") + msg if repo
+          else "GitHub repository disconnected. Imported history was kept.")
+    return redirect(url_for("project_page", slug=slug) + "#github")
+
+
+@app.post("/projects/<slug>/github/sync")
+@admin_only
+def project_github_sync(slug):
+    csrf()
+    with db() as conn:
+        p = get_project(conn, slug)
+        ok, msg = github_sync.sync_project(conn, p)
+    flash(("Sync complete: " if ok else "Sync failed: ") + msg)
+    return redirect(url_for("project_page", slug=slug) + "#github")
+
+
+@app.post("/api/github/webhook")
+def github_webhook():
+    """GitHub release webhook. Verified with GITHUB_WEBHOOK_SECRET; re-syncs linked projects."""
+    secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    if not secret:
+        return jsonify(error="webhook disabled"), 503
+    body = request.get_data(cache=False)
+    if len(body) > 5_000_000 or not github_sync.webhook_signature_ok(
+            secret, body, request.headers.get("X-Hub-Signature-256", "")):
+        return jsonify(error="bad signature"), 401
+    event = request.headers.get("X-GitHub-Event", "")
+    if event == "ping":
+        return jsonify(ok=True)
+    if event != "release":
+        return jsonify(ok=True, ignored=event)
+    try:
+        repo = json.loads(body)["repository"]["full_name"]
+    except (ValueError, KeyError, TypeError):
+        return jsonify(error="bad payload"), 400
+    synced = []
+    with db() as conn:
+        slugs = [r[0] for r in conn.execute(
+            "SELECT slug FROM projects WHERE lower(github_repo)=lower(%s)", (repo,))]
+        for slug in slugs:
+            ok, _ = github_sync.sync_project(conn, get_project(conn, slug))
+            synced.append(dict(project=slug, ok=ok))
+    return jsonify(ok=True, synced=synced)
 
 
 @app.post("/projects/<slug>/releases")

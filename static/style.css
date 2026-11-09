@@ -143,3 +143,13 @@ th { color: var(--muted); font-weight: 700; font-size: 13px; text-transform: upp
 .viewswitch { margin: 28px 0 0; text-align: center; color: var(--muted); font-size: 14px; }
 .viewswitch a { color: var(--muted); padding: 8px 10px; text-decoration: none; display: inline-block; }
 .viewswitch a.on { color: #fff; font-weight: 800; text-decoration: underline; }
+
+details { margin: 10px 0; }
+summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+details.rel { background: var(--card2); border: 1px solid var(--line); border-radius: 16px; padding: 10px 16px; }
+details.rel summary { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+details.rel.dim { opacity: .6; }
+.notes { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--field); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.5; max-height: 360px; overflow-y: auto; }
+ul.assets { list-style: none; padding: 0; margin: 12px 0 4px; }
+ul.assets li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+.ghsum { margin-top: 6px; }
