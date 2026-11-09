@@ -46,7 +46,7 @@ def test_migration_is_idempotent(client):
     portal.app.config["SCHEMA_READY"] = False
     assert client.get("/login").status_code == 200
     with psycopg.connect(DB) as conn:
-        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 5
+        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 6
 
 
 # ------------------------------------------------------------------ licensing

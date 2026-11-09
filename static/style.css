@@ -153,3 +153,6 @@ details.rel.dim { opacity: .6; }
 ul.assets { list-style: none; padding: 0; margin: 12px 0 4px; }
 ul.assets li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
 .ghsum { margin-top: 6px; }
+
+.bad { color: var(--red); }
+button[disabled] { opacity: .45; cursor: not-allowed; }

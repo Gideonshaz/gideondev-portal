@@ -129,4 +129,21 @@ MIGRATIONS = [
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
     """),
+    ("006_github_drafts", """
+        CREATE TABLE IF NOT EXISTS github_drafts (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            gh_id BIGINT NOT NULL,
+            tag TEXT NOT NULL,
+            version TEXT NOT NULL,
+            prerelease BOOLEAN NOT NULL DEFAULT false,
+            package_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            checks JSONB NOT NULL DEFAULT '[]',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (project_id, gh_id)
+        );
+    """),
 ]

@@ -43,6 +43,39 @@
   </details>
 </section>
 
+{% if p.github_repo %}
+<section class="card" id="newrelease">
+  <h2>Create new release</h2>
+  {% if not gh_draft %}
+  <p class="muted">Step 1 of 3. Creates a <b>draft</b> on GitHub. Drafts are invisible to the installed apps' updaters.</p>
+  <form method="post" action="{{ url_for('github_draft_create', slug=p.slug) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Version <input name="version" required maxlength="40" placeholder="{{ 'newer than ' + gh_latest.version if gh_latest else '1.0.0' }}"></label>
+    <label>Release notes <textarea name="notes" rows="6" maxlength="20000"></textarea></label>
+    <label class="check"><input type="checkbox" name="prerelease"> Prerelease (test build)</label>
+    <button>Create draft on GitHub</button>
+  </form>
+  {% else %}
+  <p><b>Draft {{ gh_draft.tag }}</b> {% if gh_draft.prerelease %}<span class="tag warn">prerelease</span>{% endif %}
+    {% if draft_ready %}<span class="tag good">ready to publish</span>{% else %}<span class="tag">waiting for files</span>{% endif %}</p>
+  <h3>Step 2 · Upload the files from GD</h3>
+  <p class="muted">Package with your script as usual, then upload into this draft (it will not publish):</p>
+  <div class="notes">.\Publish-Update.ps1 -Version {{ gh_draft.version }}
+.\Upload-ToDraft.ps1 -ReleaseId {{ gh_draft.gh_id }} -ReleaseDirectory .\VelopackReleases_{{ gh_draft.version }}</div>
+  <h3>Step 3 · Verify and publish</h3>
+  {% if gh_draft.checks %}
+  <ul class="assets">{% for c in gh_draft.checks %}<li><span>{{ "✓" if c[1] else "✗" }} {{ c[0] }}</span><span class="{{ 'muted' if c[1] else 'bad' }}">{{ c[2] }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="muted">Not checked yet.</p>{% endif %}
+  {% if gh_draft.last_error %}<p class="flash">{{ gh_draft.last_error }}</p>{% endif %}
+  <div class="row">
+    <form method="post" action="{{ url_for('github_draft_check', slug=p.slug) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost">Check files</button></form>
+    <form method="post" action="{{ url_for('github_draft_publish', slug=p.slug) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button{% if not draft_ready %} disabled{% endif %}>Publish {{ gh_draft.tag }}</button></form>
+  </div>
+  <form method="post" action="{{ url_for('github_draft_discard', slug=p.slug) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">Discard draft</button></form>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="card" id="releases">
   <h2>Releases &amp; updates</h2>
   {% if gh %}

@@ -122,9 +122,23 @@ def _request(method, url, tok=None, payload=None):
         if e.code in (403, 429):
             if e.headers.get("X-RateLimit-Remaining") == "0":
                 raise GitHubError("GitHub rate limit reached. Try again later.")
+            detail = ""
+            try:
+                detail = json.loads(e.read().decode()).get("message", "")
+            except Exception:
+                pass
+            if "not accessible by integration" in detail.lower():
+                raise GitHubError("The GitHub app doesn't have write permission yet. Approve "
+                                  "'Contents: Read and write' (see GitHub connection page).")
             raise GitHubError(f"GitHub refused the request ({e.code}). The connection may "
                               "lack access to this repository.")
-        raise GitHubError(f"GitHub error {e.code}.")
+        try:
+            detail = json.loads(e.read().decode()).get("message", "")
+        except Exception:
+            detail = ""
+        if e.code == 422:
+            raise GitHubError(f"GitHub rejected it (422): {detail or 'invalid request'}.")
+        raise GitHubError(f"GitHub error {e.code}{': ' + detail if detail else ''}.")
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise GitHubError(f"Could not reach GitHub: {getattr(e, 'reason', e)}")
     except ValueError:
@@ -229,6 +243,10 @@ def sync_project(conn, project, fernet=None, fetch=None):
             raise GitHubError("No repository connected.")
         releases = fetch(repo) if fetch else fetch_releases(repo, current_token(conn, fernet))
         counts = apply_releases(conn, project["id"], repo, prefix, releases, now)
+        published = [int(r["id"]) for r in releases if not r.get("draft")]
+        conn.execute("""UPDATE github_drafts SET status='published', updated_at=%s
+                        WHERE project_id=%s AND status='draft' AND gh_id = ANY(%s)""",
+                     (now, project["id"], published))
         msg = (f"{counts['total']} releases · {counts['added']} new · {counts['updated']} "
                f"changed · {counts['removed']} removed on GitHub")
         conn.execute("""UPDATE projects SET gh_last_sync_at=%s, gh_sync_ok=true, gh_sync_message=%s
@@ -245,3 +263,101 @@ def webhook_signature_ok(secret, body, header):
         return False
     expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, header)
+
+
+# ---------------------------------------------------------------- Method B: draft → verify → publish
+class _NoAuthRedirect(urllib.request.HTTPRedirectHandler):
+    """Asset downloads redirect to signed storage URLs that reject an Authorization header."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            new.headers.pop("Authorization", None)
+            new.unredirected_hdrs.pop("Authorization", None)
+        return new
+
+
+def download_small_asset(repo, asset_id, tok, limit=200_000):
+    req = urllib.request.Request(f"{API}/repos/{repo}/releases/assets/{int(asset_id)}", headers={
+        "Accept": "application/octet-stream", "User-Agent": "gideondev-portal",
+        "Authorization": "Bearer " + tok})
+    try:
+        with urllib.request.build_opener(_NoAuthRedirect).open(req, timeout=20) as resp:
+            return resp.read(limit + 1)[:limit].decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise GitHubError(f"Could not download a release file to check it: {e}")
+
+
+def all_releases_including_drafts(repo, tok):
+    out, url, pages = [], f"{API}/repos/{repo}/releases?per_page=100", 0
+    while url and pages < 20:
+        data, link = _get(url, tok)
+        out.extend(data)
+        pages += 1
+        m = re.search(r'<([^>]+)>;\s*rel="next"', link or "")
+        url = m.group(1) if m else None
+    return out
+
+
+def package_id(releases):
+    """Velopack package id learned from earlier releases' full nupkg names (newest first)."""
+    for r in releases:
+        for a in r.get("assets") or []:
+            m = re.match(r"^(.+?)-\d[\w.+-]*-full\.nupkg$", a.get("name", ""))
+            if m:
+                return m.group(1)
+    return None
+
+
+def required_files(pkg, version):
+    return ["releases.win.json", "RELEASES", "assets.win.json",
+            f"{pkg}-{version}-full.nupkg", f"{pkg}-win-Setup.exe"]
+
+
+def create_draft(repo, tok, tag, name, notes, prerelease):
+    data, _ = _request("POST", f"{API}/repos/{repo}/releases", tok, {
+        "tag_name": tag, "name": name, "body": notes, "draft": True, "prerelease": prerelease})
+    return data
+
+
+def get_release(repo, rid, tok):
+    data, _ = _get(f"{API}/repos/{repo}/releases/{int(rid)}", tok)
+    return data
+
+
+def verify_draft(repo, release, pkg, version, tok, download=None):
+    """Return a list of (file, ok, detail). All ok → safe to publish for the Velopack updater."""
+    assets = {a["name"]: a for a in release.get("assets") or []}
+    checks = []
+    for name in required_files(pkg, version):
+        a = assets.get(name)
+        if not a:
+            checks.append((name, False, "missing"))
+        elif a.get("state") != "uploaded" or not a.get("size"):
+            checks.append((name, False, "upload not finished"))
+        else:
+            checks.append((name, True, f"{a['size']:,} bytes"))
+    feed = assets.get("releases.win.json")
+    if feed and feed.get("state") == "uploaded":
+        text = (download or download_small_asset)(repo, feed["id"], tok)
+        nupkg = f"{pkg}-{version}-full.nupkg"
+        try:
+            entries = json.loads(text).get("Assets", [])
+            pkg_size = (assets.get(nupkg) or {}).get("size")
+            ok = any(e.get("Version") == version and e.get("FileName") == nupkg
+                     and e.get("Size") == pkg_size for e in entries)
+        except (ValueError, AttributeError):
+            ok = False
+        checks.append(("feed lists this version", ok,
+                       "releases.win.json lists " + nupkg if ok else
+                       f"releases.win.json does not match {nupkg} (wrong version or unfinished upload)"))
+    return checks
+
+
+def publish_draft(repo, rid, tok, prerelease):
+    data, _ = _request("PATCH", f"{API}/repos/{repo}/releases/{int(rid)}", tok, {
+        "draft": False, "prerelease": prerelease, "make_latest": "false" if prerelease else "true"})
+    return data
+
+
+def delete_draft(repo, rid, tok):
+    _request("DELETE", f"{API}/repos/{repo}/releases/{int(rid)}", tok)

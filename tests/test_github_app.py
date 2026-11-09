@@ -69,7 +69,7 @@ def test_connect_page_posts_manifest_to_github_only_there(admin, no_env, fake_ap
     assert "form-action 'self' https://github.com" in r.headers["Content-Security-Policy"]
     assert 'action="https://github.com/settings/apps/new?state=' in html and "Connect GitHub" in html
     manifest = json.loads(html.split('name="manifest" value="')[1].split('"')[0].replace("&#34;", '"').replace("&amp;", "&"))
-    assert manifest["default_permissions"] == {"contents": "read", "metadata": "read"}
+    assert manifest["default_permissions"] == {"contents": "write", "metadata": "read"}
     assert manifest["public"] is False and manifest["default_events"] == ["release"]
     assert manifest["hook_attributes"]["url"].endswith("/api/github/webhook")
     assert "github.com" not in admin.get("/").headers["Content-Security-Policy"]

@@ -7,7 +7,7 @@
 <section class="card">
   {% if app_row and not error %}
     <h2>Connected <span class="tag good">working</span></h2>
-    <p>GitHub app <b>{{ app_row.slug }}</b> can read releases from {{ repos|length }} {{ "repository" if repos|length == 1 else "repositories" }}:</p>
+    <p>GitHub app <b>{{ app_row.slug }}</b> has access to {{ repos|length }} {{ "repository" if repos|length == 1 else "repositories" }}:</p>
     <ul class="assets">{% for r in repos %}<li><span>{{ r }}</span></li>{% else %}<li class="muted">None selected yet.</li>{% endfor %}</ul>
     <p class="muted">Repositories stay private. To add or remove repositories, use “Choose repositories”.</p>
     <p><a class="btn ghostlink" href="https://github.com/apps/{{ app_row.slug }}/installations/new" rel="noopener noreferrer">Choose repositories on GitHub</a></p>
@@ -28,7 +28,7 @@
     <input type="hidden" name="manifest" value="{{ manifest }}">
     <button{% if app_row and not error %} class="ghost"{% endif %}>{{ "Reconnect GitHub" if app_row else "Connect GitHub" }}</button>
   </form>
-  <p class="muted">Permissions requested: read-only access to repository contents and releases. Nothing on GitHub is changed.</p>
+  <p class="muted">Permissions requested: repository contents (read and write) for the selected repositories only, so the portal can read releases and create/publish release drafts. It never changes code.</p>
 
   {% if app_row %}
   <form method="post" action="{{ url_for('github_disconnect') }}">

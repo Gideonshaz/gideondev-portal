@@ -507,11 +507,14 @@ def project_page(slug):
     portal_versions = {r["version"] for r in releases}
     with db() as conn:
         gh_connected = bool(github_sync.env_token()) or bool(github_sync.load_app(conn, fernet))
+        gh_draft = _draft_row(conn, p["id"]) if p["github_repo"] else None
     return render_template("project.html", p=p, releases=releases, licenses=licenses,
                            durations=DURATIONS, stats=stats, latest=latest, q=q,
                            status_filter=status_filter, gh=gh, gh_latest=gh_latest,
                            gh_pre=gh_pre, portal_versions=portal_versions,
-                           gh_connected=gh_connected)
+                           gh_connected=gh_connected, gh_draft=gh_draft,
+                           draft_ready=bool(gh_draft and gh_draft["checks"]
+                                            and all(c[1] for c in gh_draft["checks"])))
 
 
 @app.post("/projects/<slug>/edit")
@@ -584,7 +587,7 @@ def github_page():
         "setup_url": base + url_for("github_installed"),
         "setup_on_update": True,
         "public": False,
-        "default_permissions": {"contents": "read", "metadata": "read"},
+        "default_permissions": {"contents": "write", "metadata": "read"},
         "default_events": ["release"],
     }
     session["gh_state"] = secrets.token_urlsafe(24)
@@ -668,6 +671,157 @@ def github_disconnect():
     flash("Disconnected from the portal. Also delete the app on GitHub (Settings › Developer "
           "settings › GitHub Apps) if you no longer need it. Imported history was kept.")
     return redirect(url_for("github_page"))
+
+
+# ---------------------------------------------------------------- Method B: publish via draft
+def _draft_row(conn, project_id):
+    r = conn.execute("""SELECT id, gh_id, tag, version, prerelease, package_id, checks, last_error,
+                               created_at FROM github_drafts
+                        WHERE project_id=%s AND status='draft' ORDER BY id DESC LIMIT 1""",
+                     (project_id,)).fetchone()
+    return None if not r else dict(id=r[0], gh_id=r[1], tag=r[2], version=r[3], prerelease=r[4],
+                                   package_id=r[5], checks=r[6] or [], last_error=r[7],
+                                   created_at=r[8])
+
+
+@app.post("/projects/<slug>/github/draft")
+@admin_only
+def github_draft_create(slug):
+    csrf()
+    version = request.form.get("version", "").strip().lstrip("vV")
+    notes = request.form.get("notes", "").strip()[:20000]
+    prerelease = request.form.get("prerelease") == "on"
+    back = redirect(url_for("project_page", slug=slug) + "#newrelease")
+    if not VERSION_RE.match(version):
+        flash("Version must look like 1.0.6 (or 1.0.6-beta).")
+        return back
+    with db() as conn:
+        p = get_project(conn, slug)
+        if not p["github_repo"]:
+            abort(400)
+        if _draft_row(conn, p["id"]):
+            flash("There is already a draft for this app. Publish or discard it first.")
+            return back
+        try:
+            tok = github_sync.current_token(conn, fernet)
+            existing = github_sync.all_releases_including_drafts(p["github_repo"], tok)
+            tag = f"{p['github_tag_prefix']}v{version}"
+            clash = next((r for r in existing if r.get("tag_name") == tag), None)
+            if clash:
+                flash(f"{tag} already exists on GitHub{' as a draft' if clash.get('draft') else ''}. "
+                      "Nothing was created.")
+                return back
+            newest = max((vkey(github_sync.version_from_tag(r.get("tag_name", ""), p["github_tag_prefix"]))
+                          for r in existing if not r.get("draft")), default=None)
+            if newest and vkey(version) <= newest:
+                flash(f"Version {version} is not newer than the latest release on GitHub. "
+                      "Velopack only updates to higher versions.")
+                return back
+            pkg = github_sync.package_id([r for r in existing if not r.get("draft")])
+            if not pkg:
+                flash("Couldn't find the Velopack package name from earlier releases.")
+                return back
+            rel = github_sync.create_draft(p["github_repo"], tok, tag, f"{p['name']} v{version}",
+                                           notes, prerelease)
+        except github_sync.GitHubError as e:
+            flash(f"Draft not created: {e}")
+            return back
+        conn.execute("""INSERT INTO github_drafts (project_id, gh_id, tag, version, prerelease,
+                        package_id) VALUES (%s,%s,%s,%s,%s,%s)""",
+                     (p["id"], int(rel["id"]), tag, version, prerelease, pkg))
+    flash(f"Draft {tag} created on GitHub (hidden from the app updaters). Upload the files next.")
+    return back
+
+
+def _check_draft(conn, p, d):
+    tok = github_sync.current_token(conn, fernet)
+    rel = github_sync.get_release(p["github_repo"], d["gh_id"], tok)
+    if not rel.get("draft"):
+        return rel, None
+    checks = github_sync.verify_draft(p["github_repo"], rel, d["package_id"], d["version"], tok)
+    conn.execute("""UPDATE github_drafts SET checks=%s::jsonb, last_error='', updated_at=now()
+                    WHERE id=%s""", (json.dumps(checks), d["id"]))
+    return rel, checks
+
+
+@app.post("/projects/<slug>/github/draft/check")
+@admin_only
+def github_draft_check(slug):
+    csrf()
+    with db() as conn:
+        p = get_project(conn, slug)
+        d = _draft_row(conn, p["id"])
+        if not d:
+            return redirect(url_for("project_page", slug=slug))
+        try:
+            rel, checks = _check_draft(conn, p, d)
+            if checks is None:
+                github_sync.sync_project(conn, p, fernet)
+                flash(f"{d['tag']} was already published on GitHub; synced.")
+            else:
+                ok = all(c[1] for c in checks)
+                flash("All files verified. Ready to publish." if ok else
+                      "Some files are still missing or unfinished.")
+        except github_sync.GitHubError as e:
+            conn.execute("UPDATE github_drafts SET last_error=%s WHERE id=%s", (str(e), d["id"]))
+            flash(f"Check failed: {e}")
+    return redirect(url_for("project_page", slug=slug) + "#newrelease")
+
+
+@app.post("/projects/<slug>/github/draft/publish")
+@admin_only
+def github_draft_publish(slug):
+    csrf()
+    with db() as conn:
+        p = get_project(conn, slug)
+        conn.execute("SELECT pg_advisory_xact_lock(727402, %s)", (p["id"],))  # no double publish
+        d = _draft_row(conn, p["id"])
+        if not d:
+            flash("Nothing to publish.")
+            return redirect(url_for("project_page", slug=slug))
+        try:
+            rel, checks = _check_draft(conn, p, d)   # always re-verify right before publishing
+            if checks is not None:
+                if not all(c[1] for c in checks):
+                    flash("Not published: some required files are missing or don't match.")
+                    return redirect(url_for("project_page", slug=slug) + "#newrelease")
+                github_sync.publish_draft(p["github_repo"], d["gh_id"],
+                                          github_sync.current_token(conn, fernet), d["prerelease"])
+            conn.execute("UPDATE github_drafts SET status='published', updated_at=now() WHERE id=%s",
+                         (d["id"],))
+            github_sync.sync_project(conn, p, fernet)
+        except github_sync.GitHubError as e:
+            conn.execute("UPDATE github_drafts SET last_error=%s WHERE id=%s", (str(e), d["id"]))
+            flash(f"Not published: {e} It is still a draft — you can safely try again.")
+            return redirect(url_for("project_page", slug=slug) + "#newrelease")
+    flash(f"Published {d['tag']}. Installed apps will see it at their next update check.")
+    return redirect(url_for("project_page", slug=slug) + "#github")
+
+
+@app.post("/projects/<slug>/github/draft/discard")
+@admin_only
+def github_draft_discard(slug):
+    csrf()
+    with db() as conn:
+        p = get_project(conn, slug)
+        d = _draft_row(conn, p["id"])
+        if d:
+            try:
+                tok = github_sync.current_token(conn, fernet)
+                rel = github_sync.get_release(p["github_repo"], d["gh_id"], tok)
+                if not rel.get("draft"):
+                    flash("It is already published on GitHub, so it was not deleted.")
+                    conn.execute("UPDATE github_drafts SET status='published' WHERE id=%s", (d["id"],))
+                    return redirect(url_for("project_page", slug=slug) + "#github")
+                github_sync.delete_draft(p["github_repo"], d["gh_id"], tok)
+            except github_sync.GitHubError as e:
+                if "404" not in str(e):
+                    flash(f"Could not discard: {e}")
+                    return redirect(url_for("project_page", slug=slug) + "#newrelease")
+            conn.execute("UPDATE github_drafts SET status='discarded', updated_at=now() WHERE id=%s",
+                         (d["id"],))
+            flash(f"Draft {d['tag']} discarded.")
+    return redirect(url_for("project_page", slug=slug) + "#newrelease")
 
 
 @app.post("/projects/<slug>/github/sync")
