@@ -3,7 +3,7 @@
 {% block body %}
 <a class="pill" href="{{ url_for('dashboard') }}">&larr; All projects</a>
 <h1>{{ p.name }} <span class="muted">{{ p.slug }}</span></h1>
-<p class="sub">{{ "Shown on the public list" if p.is_public else "Private project" }}</p>
+<p class="sub">{% if p.is_public %}Shown on the public list &middot; <a href="{{ url_for('public_project', slug=p.slug) }}">View public page</a>{% else %}Private project{% endif %}</p>
 
 <div class="stats pstats">
   <div class="stat"><b>{{ stats.active }}</b><span>Active keys</span></div>

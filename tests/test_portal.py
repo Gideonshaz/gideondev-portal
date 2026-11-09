@@ -379,3 +379,22 @@ def test_view_switch_is_safe(client):
 def test_project_page_section_order(admin):
     page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
     assert page.index('id="releases"') < page.index('id="keys"') < page.index('id="details"')
+
+
+def test_public_pages_show_only_public_projects(admin):
+    add_release(admin, "gatepasskiosk", "1.0.0", notes="First")
+    add_release(admin, "gatepasskiosk", "1.1.0")
+    assert admin.get("/p/gatepasskiosk").status_code == 404  # private by default
+    assert "gatepasskiosk" not in admin.get("/p").get_data(as_text=True)
+    post(admin, "/projects/gatepasskiosk/edit", name="Gate Pass Kiosk", description="Visitor kiosk",
+         repo_url="", is_public="on")
+    page = admin.get("/p/gatepasskiosk").get_data(as_text=True)
+    assert "Version 1.1.0" in page and "example.com/gatepasskiosk-1.1.0.zip" in page
+    assert 'class="side"' not in page  # no admin sidebar
+    assert "Log out" not in page and "csrf" not in page
+    assert "Gate Pass Kiosk" in admin.get("/p").get_data(as_text=True)
+
+
+def test_public_pages_need_no_login_and_hide_withdrawn(client):
+    assert client.get("/p").status_code == 200
+    assert client.get("/p/nope").status_code == 404

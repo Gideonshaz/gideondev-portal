@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }} · GideonDev{% endblock %}
+{% block body %}
+<a class="pill" href="{{ url_for('public_list') }}">&larr; All software</a>
+<h1>{{ p.name }}</h1>
+{% if p.description %}<p class="sub">{{ p.description }}</p>{% endif %}
+
+<section class="card">
+  <h2>Download</h2>
+  {% if latest %}
+    <p><b>Version {{ latest.version }}</b> <span class="tag good">latest</span>
+       <span class="muted">· {{ latest.date.strftime("%d %b %Y") }}{% if latest.size %} · {{ (latest.size / 1048576)|round(1) }} MB{% endif %}</span></p>
+    {% if latest.notes %}<p class="muted">{{ latest.notes }}</p>{% endif %}
+    <p><a class="btn" href="{{ latest.url }}" rel="noopener noreferrer">Download {{ latest.version }}</a></p>
+    <p class="muted">A valid activation key from GideonDev is needed to use the software.</p>
+  {% else %}
+    <p class="muted">No download is available yet.</p>
+  {% endif %}
+</section>
+
+{% if releases|length > 1 %}
+<section class="card">
+  <h2>Version history</h2>
+  <table>
+    <thead><tr><th>Version</th><th>Date</th><th></th></tr></thead>
+    {% for r in releases %}
+    <tr>
+      <td><b>{{ r.version }}</b>{% if r.channel == "beta" %} <span class="tag warn">beta</span>{% endif %}
+        {% if r.notes %}<div class="muted">{{ r.notes }}</div>{% endif %}</td>
+      <td>{{ r.date.strftime("%Y-%m-%d") }}</td>
+      <td><a href="{{ r.url }}" rel="noopener noreferrer">download</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

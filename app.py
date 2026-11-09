@@ -331,6 +331,34 @@ def api_project(slug):
                    repo_url=p["repo_url"], releases=rels)
 
 
+# ---------------------------------------------------------------- public web pages
+@app.get("/p")
+def public_list():
+    with db() as conn:
+        rows = conn.execute("""SELECT id, slug, name, description FROM projects
+                               WHERE is_public ORDER BY name""").fetchall()
+        apps = []
+        for pid, slug, name, desc in rows:
+            rel = releases_for(conn, pid, "stable")
+            apps.append(dict(slug=slug, name=name, description=desc,
+                             version=rel[0][0] if rel else None))
+    return render_template("public_list.html", apps=apps, public=True)
+
+
+@app.get("/p/<slug>")
+def public_project(slug):
+    with db() as conn:
+        p = get_project(conn, slug)
+        if not p["is_public"]:
+            abort(404)
+        rels = releases_for(conn, p["id"])
+    releases = [dict(version=r[0], channel=r[1], url=r[2], sha=r[3], size=r[4], notes=r[5],
+                     mandatory=r[6], date=r[7]) for r in rels]
+    latest = next((r for r in releases if r["channel"] == "stable"), None)
+    return render_template("public_project.html", p=p, releases=releases, latest=latest,
+                           public=True)
+
+
 @app.get("/api/v1/projects/<slug>/latest")
 def api_latest(slug):
     channel = request.args.get("channel", "stable")

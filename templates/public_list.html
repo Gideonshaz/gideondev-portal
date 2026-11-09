@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}GideonDev · Software{% endblock %}
+{% block body %}
+<h1>GideonDev</h1>
+<p class="sub">Software projects. Tap one to see details and download.</p>
+<div class="tiles">
+{% for a in apps %}
+  <a class="tile" href="{{ url_for('public_project', slug=a.slug) }}">
+    <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg></span>
+    <span class="txt">
+      <span class="name">{{ a.name }}</span>
+      <span class="meta">{{ a.description or "Software by GideonDev" }}</span>
+      <span class="chips">{% if a.version %}<span class="chip on">v{{ a.version }}</span>{% else %}<span class="chip">Coming soon</span>{% endif %}</span>
+    </span>
+    <span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+  </a>
+{% else %}
+  <section class="card hero-card"><h2>Nothing here yet</h2><p class="muted">Projects will appear here soon.</p></section>
+{% endfor %}
+</div>
+<p class="viewswitch"><a href="{{ url_for('login') }}">Admin sign-in</a></p>
+{% endblock %}

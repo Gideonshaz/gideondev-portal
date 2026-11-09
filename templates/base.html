@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   {% if view == "desktop" %}<meta name="viewport" content="width=1100">{% else %}<meta name="viewport" content="width=device-width, initial-scale=1">{% endif %}
-  <meta name="robots" content="noindex">
+  {% if not public %}<meta name="robots" content="noindex">{% endif %}
   <meta name="theme-color" content="#09090f">
   <title>{% block title %}GideonDev Portal{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -11,8 +11,8 @@
   {% elif view == "auto" %}<link rel="stylesheet" media="(min-width: 960px)" href="{{ url_for('static', filename='desktop.css') }}">{% endif %}
 </head>
 <body>
-  <div class="shell{% if not session.get('admin') %} nosidebar{% endif %}">
-  {% if session.get('admin') %}
+  <div class="shell{% if not session.get('admin') or public %} nosidebar{% endif %}">
+  {% if session.get('admin') and not public %}
   <aside class="side">
     <a class="brand" href="{{ url_for('dashboard') }}"><span class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></span>GideonDev</a>
     <a class="nav{% if request.endpoint == 'dashboard' %} on{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -22,12 +22,12 @@
   </aside>
   {% endif %}
   <div class="content">
-  <div class="topbar{% if session.get('admin') %} admin{% endif %}">
-    <a class="brand" href="{{ url_for('dashboard') if session.get('admin') else '#' }}">
+  <div class="topbar{% if session.get('admin') and not public %} admin{% endif %}">
+    <a class="brand" href="{{ url_for('public_list') if public else (url_for('dashboard') if session.get('admin') else '#') }}">
       <span class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></span>
       GideonDev
     </a>
-    {% if session.get('admin') %}
+    {% if session.get('admin') and not public %}
     <form method="post" action="{{ url_for('logout') }}">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <button class="round" title="Log out" aria-label="Log out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
