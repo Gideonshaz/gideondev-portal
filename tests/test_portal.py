@@ -342,3 +342,12 @@ def test_old_server_keys_still_work_with_the_new_column(client):
     key = "GP-" + "9A8B" * 12
     _old_server_insert(key)  # the old server knows nothing about the name column
     assert verify(client, key, "GatePassKiosk", DEVICE_A, "/api/verify").get_json()["valid"] is True
+
+
+def test_key_search_and_status_filter(admin):
+    for n in ("Rahim", "Siti"):
+        post(admin, "/projects/gatepasskiosk/licenses", duration="1 year", max_devices="1", assigned_to=n)
+    page = admin.get("/projects/gatepasskiosk?q=rahim").get_data(as_text=True)
+    assert 'value="Rahim"' in page and 'value="Siti"' not in page
+    assert "No keys match." in admin.get("/projects/gatepasskiosk?status=revoked").get_data(as_text=True)
+    assert admin.get("/projects/gatepasskiosk?status=bogus").status_code == 200

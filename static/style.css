@@ -162,3 +162,13 @@ th { color: var(--muted); font-weight: 700; font-size: 13px; text-transform: upp
 }
 .deskonly { display: none; }
 @media (min-width: 1000px) { .deskonly { display: block; } }
+
+.jump { margin: 0 0 18px; }
+.jump .chip { text-decoration: none; margin-right: 6px; }
+.pstats { grid-template-columns: repeat(2, 1fr); }
+.filter { margin-bottom: 8px; }
+.filter .ghost { margin-bottom: 14px; }
+@media (max-width: 999px) { .pstats { display: grid; gap: 12px; margin-bottom: 14px; }
+  .pstats .stat { padding: 14px 16px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
+  .pstats .stat b { display: block; font-size: 26px; color: #fff; } .pstats .stat span { color: var(--muted); font-size: 13px; font-weight: 600; } }
+@media (min-width: 1000px) { .pstats { grid-template-columns: repeat(4, 1fr); } }

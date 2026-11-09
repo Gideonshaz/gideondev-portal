@@ -431,14 +431,45 @@ def project_page(slug):
                 SELECT a.license_id, a.device_id, a.last_seen FROM activations a
                 JOIN licenses l ON l.id=a.license_id WHERE l.project_id=%s""", (p["id"],)):
             devices.setdefault(lid, []).append(dict(id=dev[:10] + "…", seen=seen))
-    licenses = [dict(id=r[0], key=show_key(r[1]), duration=r[2],
-                     max_devices=r[3], activated_at=r[4], expires_at=r[5], revoked_at=r[6],
-                     assigned_to=r[7],
-                     devices=devices.get(r[0], [])) for r in lic_rows]
+    now = datetime.now(timezone.utc)
+    licenses = []
+    for r in lic_rows:
+        exp = r[5]
+        if r[6]:
+            status = "revoked"
+        elif exp is None:
+            status = "unused"
+        elif exp < now:
+            status = "expired"
+        else:
+            status = "active"
+        left = ""
+        if status == "active":
+            days = (exp - now).days
+            left = f"{days} days left" if days < 60 else f"{days // 30} months left"
+        licenses.append(dict(id=r[0], key=show_key(r[1]), duration=r[2],
+                             max_devices=r[3], activated_at=r[4], expires_at=exp, revoked_at=r[6],
+                             assigned_to=r[7], status=status, left=left,
+                             devices=devices.get(r[0], [])))
+    stats = dict(total=len(licenses),
+                 active=sum(1 for l in licenses if l["status"] == "active"),
+                 unused=sum(1 for l in licenses if l["status"] == "unused"),
+                 devices=sum(len(l["devices"]) for l in licenses))
+    q = request.args.get("q", "").strip().lower()[:80]
+    status_filter = request.args.get("status", "")
+    if status_filter not in ("active", "unused", "expired", "revoked"):
+        status_filter = ""
+    if status_filter:
+        licenses = [l for l in licenses if l["status"] == status_filter]
+    if q:
+        licenses = [l for l in licenses
+                    if q in (l["assigned_to"] or "").lower() or q in (l["key"] or "").lower()]
     releases = [dict(id=r[9], version=r[0], channel=r[1], download_url=r[2], notes=r[5],
                      mandatory=r[6], yanked=r[8], created_at=r[7]) for r in rels]
+    latest = next((r for r in releases if not r["yanked"]), None)
     return render_template("project.html", p=p, releases=releases, licenses=licenses,
-                           durations=DURATIONS)
+                           durations=DURATIONS, stats=stats, latest=latest, q=q,
+                           status_filter=status_filter)
 
 
 @app.post("/projects/<slug>/edit")

@@ -5,7 +5,15 @@
 <h1>{{ p.name }} <span class="muted">{{ p.slug }}</span></h1>
 <p class="sub">{{ "Shown on the public list" if p.is_public else "Private project" }}</p>
 
-<section class="card">
+<div class="stats pstats">
+  <div class="stat"><b>{{ stats.active }}</b><span>Active keys</span></div>
+  <div class="stat"><b>{{ stats.unused }}</b><span>Unused keys</span></div>
+  <div class="stat"><b>{{ stats.devices }}</b><span>Activated devices</span></div>
+  <div class="stat"><b>{{ latest.version if latest else "—" }}</b><span>Latest release</span></div>
+</div>
+<p class="jump"><a class="chip" href="#releases">Releases</a> <a class="chip" href="#keys">License keys</a> <a class="chip" href="#details">Details</a></p>
+
+<section class="card" id="details">
   <h2>Details</h2>
   <form method="post" action="{{ url_for('project_edit', slug=p.slug) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -18,14 +26,14 @@
   <p class="muted">App update check: <code>/api/v1/projects/{{ p.slug }}/latest?current=1.0.0</code></p>
 </section>
 
-<section class="card">
+<section class="card" id="releases">
   <h2>Releases</h2>
   <table class="stack">
     <thead><tr><th>Version</th><th>Channel</th><th>Link</th><th>Date</th><th></th></tr></thead>
     <tbody>
     {% for r in releases %}
       <tr class="{{ 'dim' if r.yanked }}">
-        <td data-label="Version"><b>{{ r.version }}</b>{% if r.mandatory %} <span class="tag warn">mandatory</span>{% endif %}{% if r.yanked %} <span class="tag bad">withdrawn</span>{% endif %}</td>
+        <td data-label="Version"><b>{{ r.version }}</b>{% if r.mandatory %} <span class="tag warn">mandatory</span>{% endif %}{% if r.yanked %} <span class="tag bad">withdrawn</span>{% endif %}{% if latest and r.id == latest.id %} <span class="tag good">latest</span>{% endif %}{% if r.notes %}<div class="muted">{{ r.notes }}</div>{% endif %}</td>
         <td data-label="Channel">{{ r.channel }}</td>
         <td class="clip" data-label="Link"><a href="{{ r.download_url }}" rel="noopener noreferrer">download</a></td>
         <td data-label="Date">{{ r.created_at.strftime("%Y-%m-%d") }}</td>
@@ -58,7 +66,7 @@
   </form>
 </section>
 
-<section class="card">
+<section class="card" id="keys">
   <h2>License keys</h2>
   <form method="post" action="{{ url_for('license_generate', slug=p.slug) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -70,6 +78,16 @@
       <label>Devices <input name="max_devices" type="number" min="1" max="50" value="1"></label>
     </div>
     <button>Generate key</button>
+  </form>
+  <form method="get" action="{{ url_for('project_page', slug=p.slug) }}#keys" class="filter row">
+    <label>Search <input name="q" value="{{ q }}" maxlength="80" placeholder="Name or key"></label>
+    <label>Status
+      <select name="status">
+        <option value="">All</option>
+        {% for s in ["active","unused","expired","revoked"] %}<option value="{{ s }}" {{ "selected" if status_filter == s }}>{{ s|capitalize }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="ghost">Filter</button>
   </form>
   <table class="stack">
     <thead><tr><th>Name</th><th>Key</th><th>Term</th><th>Status</th><th>Devices</th><th></th></tr></thead>
@@ -86,8 +104,9 @@
         <td class="clip" data-label="Key">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">unreadable (stored with a different encryption secret)</span>{% endif %}</td>
         <td data-label="Term">{{ l.duration }}</td>
         <td data-label="Status">
-          {% if l.revoked_at %}<span class="tag bad">revoked</span>
-          {% elif l.expires_at %}<span class="tag good">until {{ l.expires_at.strftime("%Y-%m-%d") }}</span>
+          {% if l.status == "revoked" %}<span class="tag bad">revoked</span>
+          {% elif l.status == "expired" %}<span class="tag warn">expired {{ l.expires_at.strftime("%Y-%m-%d") }}</span>
+          {% elif l.status == "active" %}<span class="tag good">active</span><div class="muted">{{ l.left }} · until {{ l.expires_at.strftime("%Y-%m-%d") }}</div>
           {% else %}<span class="tag">unused</span>{% endif %}
         </td>
         <td data-label="Devices">{{ l.devices|length }}/{{ l.max_devices }}
@@ -107,7 +126,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="muted">No keys yet.</td></tr>
+      <tr><td colspan="6" class="muted">{{ "No keys match." if (q or status_filter) else "No keys yet." }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
