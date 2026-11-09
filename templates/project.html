@@ -11,23 +11,11 @@
   <div class="stat"><b>{{ stats.devices }}</b><span>Activated devices</span></div>
   <div class="stat"><b>{{ latest.version if latest else "—" }}</b><span>Latest release</span></div>
 </div>
-<p class="jump"><a class="chip" href="#releases">Releases</a> <a class="chip" href="#keys">License keys</a> <a class="chip" href="#details">Details</a></p>
+<p class="jump"><a class="chip" href="#releases">Releases &amp; updates</a> <a class="chip" href="#keys">License keys</a> <a class="chip" href="#details">Details &amp; settings</a></p>
 
-<section class="card" id="details">
-  <h2>Details</h2>
-  <form method="post" action="{{ url_for('project_edit', slug=p.slug) }}">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Name <input name="name" value="{{ p.name }}" maxlength="80" required></label>
-    <label>Description <textarea name="description" maxlength="500" rows="3">{{ p.description }}</textarea></label>
-    <label>Repository link <input name="repo_url" value="{{ p.repo_url }}" maxlength="200"></label>
-    <label class="check"><input type="checkbox" name="is_public" {{ "checked" if p.is_public }}> Show on the public project list</label>
-    <button>Save</button>
-  </form>
-  <p class="muted">App update check: <code>/api/v1/projects/{{ p.slug }}/latest?current=1.0.0</code></p>
-</section>
 
 <section class="card" id="releases">
-  <h2>Releases</h2>
+  <h2>Releases &amp; updates</h2>
   <table class="stack">
     <thead><tr><th>Version</th><th>Channel</th><th>Link</th><th>Date</th><th></th></tr></thead>
     <tbody>
@@ -130,5 +118,18 @@
     {% endfor %}
     </tbody>
   </table>
+</section>
+
+<section class="card" id="details">
+  <h2>Project details &amp; settings</h2>
+  <form method="post" action="{{ url_for('project_edit', slug=p.slug) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Name <input name="name" value="{{ p.name }}" maxlength="80" required></label>
+    <label>Description <textarea name="description" maxlength="500" rows="3">{{ p.description }}</textarea></label>
+    <label>Repository link <input name="repo_url" value="{{ p.repo_url }}" maxlength="200"></label>
+    <label class="check"><input type="checkbox" name="is_public" {{ "checked" if p.is_public }}> Show on the public project list</label>
+    <button>Save</button>
+  </form>
+  <p class="muted">App update check: <code>/api/v1/projects/{{ p.slug }}/latest?current=1.0.0</code></p>
 </section>
 {% endblock %}

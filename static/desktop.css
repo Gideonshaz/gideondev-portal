@@ -1,0 +1,29 @@
+/* Desktop layout: loaded only on wide screens (or when Desktop view is chosen). */
+.shell { display: grid; grid-template-columns: 250px 1fr; min-height: 100vh; }
+.shell.nosidebar { display: block; }
+.side { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh;
+  padding: 24px 16px; background: #0d0d16; border-right: 1px solid var(--line); overflow-y: auto; }
+.side .brand { margin: 0 8px 24px; }
+.side h4 { margin: 20px 12px 6px; color: var(--muted); font-size: 12px; letter-spacing: .6px; text-transform: uppercase; }
+.side a.nav { display: block; padding: 11px 14px; border-radius: 12px; color: var(--ink); text-decoration: none; font-weight: 600; }
+.side a.nav:hover { background: rgba(255, 255, 255, .07); }
+.side a.nav.on { background: var(--accent); color: #fff; }
+.side form { margin-top: auto; }
+.side form button { width: 100%; }
+.topbar.admin { display: none; }
+.content main, .content .topbar { max-width: 1240px; padding-left: 32px; padding-right: 32px; }
+.content main { padding-top: 28px; }
+.pill { display: none; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.stat { padding: 18px 20px; border-radius: 20px; }
+.stat b { font-size: 28px; line-height: 1.1; overflow-wrap: anywhere; }
+.stat span { font-size: 14px; }
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.panels .card { margin: 0; }
+.panels table { margin: 0; }
+.tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+.tiles .tile { margin: 0; }
+table.stack thead { display: table-header-group; }
+.card { padding: 26px; }
+.deskonly { display: block; }
+.viewswitch { text-align: left; }

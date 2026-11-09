@@ -351,3 +351,31 @@ def test_key_search_and_status_filter(admin):
     assert 'value="Rahim"' in page and 'value="Siti"' not in page
     assert "No keys match." in admin.get("/projects/gatepasskiosk?status=revoked").get_data(as_text=True)
     assert admin.get("/projects/gatepasskiosk?status=bogus").status_code == 200
+
+
+def test_view_switch_cookie_and_layout_links(admin):
+    page = admin.get("/").get_data(as_text=True)
+    assert 'media="(min-width: 960px)"' in page and "width=device-width" in page  # auto
+    r = admin.get("/view?mode=desktop&next=/projects/gatepasskiosk")
+    assert r.status_code == 302 and r.headers["Location"] == "/projects/gatepasskiosk"
+    page = admin.get("/").get_data(as_text=True)
+    assert "width=1100" in page and "desktop.css" in page and "min-width: 960px" not in page
+    admin.get("/view?mode=mobile")
+    page = admin.get("/").get_data(as_text=True)
+    assert "desktop.css" not in page and "width=device-width" in page
+    admin.get("/view?mode=auto")
+    assert 'media="(min-width: 960px)"' in admin.get("/").get_data(as_text=True)
+
+
+def test_view_switch_is_safe(client):
+    for nxt in ("//evil.example", "https://evil.example", "/\\evil.example"):
+        r = client.get("/view", query_string={"mode": "desktop", "next": nxt})
+        assert r.headers["Location"] == "/"
+    client.get("/view?mode=auto")
+    client.get("/view?mode=bogus")
+    assert 'media="(min-width: 960px)"' in client.get("/login").get_data(as_text=True)  # still auto
+
+
+def test_project_page_section_order(admin):
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert page.index('id="releases"') < page.index('id="keys"') < page.index('id="details"')

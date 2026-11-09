@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if view == "desktop" %}<meta name="viewport" content="width=1100">{% else %}<meta name="viewport" content="width=device-width, initial-scale=1">{% endif %}
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#0c0c16">
+  <meta name="theme-color" content="#09090f">
   <title>{% block title %}GideonDev Portal{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% if view == "desktop" %}<link rel="stylesheet" href="{{ url_for('static', filename='desktop.css') }}">
+  {% elif view == "auto" %}<link rel="stylesheet" media="(min-width: 960px)" href="{{ url_for('static', filename='desktop.css') }}">{% endif %}
 </head>
 <body>
   <div class="shell{% if not session.get('admin') %} nosidebar{% endif %}">
@@ -37,6 +39,11 @@
       {% for m in messages %}<p class="flash">{{ m }}</p>{% endfor %}
     {% endwith %}
     {% block body %}{% endblock %}
+    <p class="viewswitch">View:
+      <a class="{{ 'on' if view == 'auto' }}" href="{{ url_for('set_view', mode='auto', next=request.full_path.rstrip('?')) }}">Auto</a>
+      <a class="{{ 'on' if view == 'desktop' }}" href="{{ url_for('set_view', mode='desktop', next=request.full_path.rstrip('?')) }}">Desktop</a>
+      <a class="{{ 'on' if view == 'mobile' }}" href="{{ url_for('set_view', mode='mobile', next=request.full_path.rstrip('?')) }}">Mobile</a>
+    </p>
   </main>
   </div>
   </div>

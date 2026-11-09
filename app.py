@@ -134,7 +134,26 @@ def inject():
                         for r in conn.execute("SELECT slug, name FROM projects ORDER BY name").fetchall()]
         except Exception:
             side = []
-    return {"csrf": session.get("csrf", ""), "side_projects": side}
+    view = request.cookies.get("view")
+    if view not in ("desktop", "mobile"):
+        view = "auto"
+    return {"csrf": session.get("csrf", ""), "side_projects": side, "view": view}
+
+
+@app.get("/view")
+def set_view():
+    """Remember a layout choice (display preference only): auto, desktop or mobile."""
+    mode = request.args.get("mode", "")
+    nxt = request.args.get("next", "/")
+    if not nxt.startswith("/") or nxt.startswith("//") or "\\" in nxt or len(nxt) > 300:
+        nxt = "/"
+    resp = redirect(nxt)
+    if mode == "auto":
+        resp.delete_cookie("view", path="/")
+    elif mode in ("desktop", "mobile"):
+        resp.set_cookie("view", mode, max_age=60 * 60 * 24 * 365, path="/",
+                        samesite="Lax", secure=request.is_secure)
+    return resp
 
 
 @app.after_request
