@@ -126,7 +126,15 @@ def csrf():
 
 @app.context_processor
 def inject():
-    return {"csrf": session.get("csrf", "")}
+    side = []
+    if session.get("admin") and request.endpoint not in (None, "static"):
+        try:
+            with db() as conn:
+                side = [dict(slug=r[0], name=r[1])
+                        for r in conn.execute("SELECT slug, name FROM projects ORDER BY name").fetchall()]
+        except Exception:
+            side = []
+    return {"csrf": session.get("csrf", ""), "side_projects": side}
 
 
 @app.after_request
@@ -373,9 +381,21 @@ def dashboard():
                    (SELECT count(*) FROM activations a JOIN licenses l ON l.id=a.license_id
                      WHERE l.project_id=p.id)
             FROM projects p ORDER BY p.name""").fetchall()
+        recent_rel = conn.execute("""
+            SELECT p.name, r.version, r.channel, r.created_at FROM releases r
+            JOIN projects p ON p.id=r.project_id WHERE NOT r.yanked
+            ORDER BY r.created_at DESC LIMIT 5""").fetchall()
+        recent_act = conn.execute("""
+            SELECT p.name, a.device_id, a.last_seen FROM activations a
+            JOIN licenses l ON l.id=a.license_id JOIN projects p ON p.id=l.project_id
+            ORDER BY a.last_seen DESC LIMIT 5""").fetchall()
     projects = [dict(slug=r[0], name=r[1], is_public=r[2], releases=r[3], licenses=r[4],
                      devices=r[5]) for r in rows]
-    return render_template("dashboard.html", projects=projects)
+    totals = dict(projects=len(projects), key_count=sum(p["licenses"] for p in projects),
+                  devices=sum(p["devices"] for p in projects),
+                  releases=sum(p["releases"] for p in projects))
+    return render_template("dashboard.html", projects=projects, totals=totals,
+                           recent_rel=recent_rel, recent_act=recent_act)
 
 
 @app.post("/projects")

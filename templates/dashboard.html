@@ -4,6 +4,33 @@
 <h1>Projects</h1>
 <p class="sub">Tap a project to manage its updates and license keys</p>
 
+<div class="stats">
+  <div class="stat"><b>{{ totals.projects }}</b><span>Projects</span></div>
+  <div class="stat"><b>{{ totals.key_count }}</b><span>Active keys</span></div>
+  <div class="stat"><b>{{ totals.devices }}</b><span>Activated devices</span></div>
+  <div class="stat"><b>{{ totals.releases }}</b><span>Releases</span></div>
+</div>
+
+<div class="panels">
+  <section class="card">
+    <h2>Recent releases</h2>
+    <table>
+      <thead><tr><th>Project</th><th>Version</th><th>Date</th></tr></thead>
+      {% for r in recent_rel %}<tr><td>{{ r[0] }}</td><td><span class="tag good">v{{ r[1] }}</span> <span class="tag">{{ r[2] }}</span></td><td>{{ r[3].strftime("%d %b %Y") }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">No releases yet.</td></tr>{% endfor %}
+    </table>
+  </section>
+  <section class="card">
+    <h2>Recent activations</h2>
+    <table>
+      <thead><tr><th>Project</th><th>Device</th><th>Last seen</th></tr></thead>
+      {% for a in recent_act %}<tr><td>{{ a[0] }}</td><td><code>{{ a[1][:14] }}</code></td><td>{{ a[2].strftime("%d %b %H:%M") }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">No devices yet.</td></tr>{% endfor %}
+    </table>
+  </section>
+</div>
+
+<h2 class="deskonly">My projects</h2>
 <div class="tiles">
 {% for p in projects %}
   <a class="tile" href="{{ url_for('project_page', slug=p.slug) }}">
