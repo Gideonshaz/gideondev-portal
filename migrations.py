@@ -89,4 +89,7 @@ MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS login_attempts_ip_at ON login_attempts (ip, at);
         CREATE INDEX IF NOT EXISTS licenses_project ON licenses (project_id);
     """),
+    ("003_license_name", """
+        ALTER TABLE licenses ADD COLUMN IF NOT EXISTS assigned_to TEXT NOT NULL DEFAULT '';
+    """),
 ]

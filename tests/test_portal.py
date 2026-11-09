@@ -46,7 +46,7 @@ def test_migration_is_idempotent(client):
     portal.app.config["SCHEMA_READY"] = False
     assert client.get("/login").status_code == 200
     with psycopg.connect(DB) as conn:
-        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 2
+        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 3
 
 
 # ------------------------------------------------------------------ licensing
@@ -296,3 +296,49 @@ def test_database_failure_never_reports_a_valid_license(admin, monkeypatch):
     r = verify(admin, key, "gatepasskiosk", DEVICE_A, "/api/verify")
     assert r.status_code == 500
     assert not (r.get_json(silent=True) or {}).get("valid")
+
+
+# ------------------------------------------------------------------ who a key belongs to
+def _last_license_id():
+    with psycopg.connect(DB) as conn:
+        return conn.execute("SELECT id FROM licenses ORDER BY id DESC LIMIT 1").fetchone()[0]
+
+
+def test_key_can_be_named_and_renamed(admin):
+    r = post(admin, "/projects/gatepasskiosk/licenses", duration="1 year", max_devices="1",
+             assigned_to="  Rahim   front desk ")
+    assert r.status_code == 302
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert 'value="Rahim front desk"' in page  # spaces tidied
+    lid = _last_license_id()
+    assert post(admin, f"/licenses/{lid}/name", assigned_to="Siti").status_code == 302
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert 'value="Siti"' in page and "Rahim" not in page
+
+
+def test_names_are_escaped_and_length_limited(admin):
+    post(admin, "/projects/gatepasskiosk/licenses", duration="1 year", max_devices="1",
+         assigned_to="<script>alert(1)</script>" + "x" * 200)
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert "<script>alert(1)" not in page
+    with psycopg.connect(DB) as conn:
+        assert len(conn.execute("SELECT assigned_to FROM licenses").fetchone()[0]) <= 80
+
+
+def test_unnamed_keys_still_work_and_revoke_is_direct(admin):
+    key = make_key(admin)  # no name given
+    assert verify(admin, key, "gatepasskiosk", DEVICE_A, "/api/verify").get_json()["valid"] is True
+    lid = _last_license_id()
+    assert post(admin, f"/licenses/{lid}/revoke").status_code == 302
+    assert verify(admin, key, "gatepasskiosk", DEVICE_A, "/api/verify").get_json()["valid"] is False
+
+
+def test_naming_needs_login_and_csrf(client):
+    assert client.post("/licenses/1/name", data={"assigned_to": "x"}).status_code in (302, 400, 401, 403)
+
+
+def test_old_server_keys_still_work_with_the_new_column(client):
+    assert client.get("/health").status_code == 200
+    key = "GP-" + "9A8B" * 12
+    _old_server_insert(key)  # the old server knows nothing about the name column
+    assert verify(client, key, "GatePassKiosk", DEVICE_A, "/api/verify").get_json()["valid"] is True

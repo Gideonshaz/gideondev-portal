@@ -403,7 +403,8 @@ def project_page(slug):
         p = get_project(conn, slug)
         rels = releases_for(conn, p["id"], include_yanked=True)
         lic_rows = conn.execute("""
-            SELECT id, key_ciphertext, duration, max_devices, activated_at, expires_at, revoked_at
+            SELECT id, key_ciphertext, duration, max_devices, activated_at, expires_at, revoked_at,
+                   assigned_to
             FROM licenses WHERE project_id=%s ORDER BY id DESC""", (p["id"],)).fetchall()
         devices = {}
         for lid, dev, seen in conn.execute("""
@@ -412,6 +413,7 @@ def project_page(slug):
             devices.setdefault(lid, []).append(dict(id=dev[:10] + "…", seen=seen))
     licenses = [dict(id=r[0], key=show_key(r[1]), duration=r[2],
                      max_devices=r[3], activated_at=r[4], expires_at=r[5], revoked_at=r[6],
+                     assigned_to=r[7],
                      devices=devices.get(r[0], [])) for r in lic_rows]
     releases = [dict(id=r[9], version=r[0], channel=r[1], download_url=r[2], notes=r[5],
                      mandatory=r[6], yanked=r[8], created_at=r[7]) for r in rels]
@@ -493,15 +495,37 @@ def license_generate(slug):
     if duration not in DURATIONS or not 1 <= max_devices <= 50:
         abort(400)
     key = "GP-" + secrets.token_hex(24).upper()
+    assigned_to = clean_label(request.form.get("assigned_to"), 80)
     with db() as conn:
         p = get_project(conn, slug)
         conn.execute("""INSERT INTO licenses (key_hash, key_ciphertext, product, months, duration,
-                                              project_id, max_devices)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                                              project_id, max_devices, assigned_to)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                      (hashlib.sha256(key.encode()).hexdigest(), fernet.encrypt(key.encode()).decode(),
-                      p["name"], DURATIONS[duration], duration, p["id"], max_devices))
+                      p["name"], DURATIONS[duration], duration, p["id"], max_devices,
+                      assigned_to))
     flash("Key generated.")
     return redirect(url_for("project_page", slug=slug))
+
+
+def clean_label(value, limit):
+    """Names and notes are plain text. Collapse whitespace and cap the length."""
+    return " ".join(str(value or "").split())[:limit]
+
+
+@app.post("/licenses/<int:license_id>/name")
+@admin_only
+def license_name(license_id):
+    csrf()
+    with db() as conn:
+        row = conn.execute("""SELECT p.slug FROM licenses l JOIN projects p ON p.id=l.project_id
+                              WHERE l.id=%s""", (license_id,)).fetchone()
+        if not row:
+            abort(404)
+        conn.execute("UPDATE licenses SET assigned_to=%s WHERE id=%s",
+                     (clean_label(request.form.get("assigned_to"), 80), license_id))
+    flash("Name saved.")
+    return redirect(url_for("project_page", slug=row[0]))
 
 
 def _license_action(license_id, sql_list):

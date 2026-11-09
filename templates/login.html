@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Sign in · GideonDev Portal{% endblock %}
 {% block body %}
-<section class="card narrow">
-  <h1>GideonDev Portal</h1>
+<span class="pill">Admin</span>
+<h1>Welcome back</h1>
+<p class="sub">Licenses, updates and projects in one place</p>
+<section class="card">
   {% if error %}<p class="flash">{{ error }}</p>{% endif %}
   <form method="post">
     <label>Admin password

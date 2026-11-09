@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ p.name }} · GideonDev Portal{% endblock %}
 {% block body %}
-<p><a href="{{ url_for('dashboard') }}">&larr; All projects</a></p>
+<a class="pill" href="{{ url_for('dashboard') }}">&larr; All projects</a>
 <h1>{{ p.name }} <span class="muted">{{ p.slug }}</span></h1>
+<p class="sub">{{ "Shown on the public list" if p.is_public else "Private project" }}</p>
 
 <section class="card">
   <h2>Details</h2>
@@ -19,15 +20,15 @@
 
 <section class="card">
   <h2>Releases</h2>
-  <table>
+  <table class="stack">
     <thead><tr><th>Version</th><th>Channel</th><th>Link</th><th>Date</th><th></th></tr></thead>
     <tbody>
     {% for r in releases %}
       <tr class="{{ 'dim' if r.yanked }}">
-        <td>{{ r.version }}{% if r.mandatory %} <span class="tag">mandatory</span>{% endif %}{% if r.yanked %} <span class="tag">withdrawn</span>{% endif %}</td>
-        <td>{{ r.channel }}</td>
-        <td class="clip"><a href="{{ r.download_url }}" rel="noopener noreferrer">download</a></td>
-        <td>{{ r.created_at.strftime("%Y-%m-%d") }}</td>
+        <td data-label="Version"><b>{{ r.version }}</b>{% if r.mandatory %} <span class="tag warn">mandatory</span>{% endif %}{% if r.yanked %} <span class="tag bad">withdrawn</span>{% endif %}</td>
+        <td data-label="Channel">{{ r.channel }}</td>
+        <td class="clip" data-label="Link"><a href="{{ r.download_url }}" rel="noopener noreferrer">download</a></td>
+        <td data-label="Date">{{ r.created_at.strftime("%Y-%m-%d") }}</td>
         <td>
           <form method="post" action="{{ url_for('release_yank', release_id=r.id) }}">
             <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -59,27 +60,37 @@
 
 <section class="card">
   <h2>License keys</h2>
-  <form method="post" action="{{ url_for('license_generate', slug=p.slug) }}" class="row">
+  <form method="post" action="{{ url_for('license_generate', slug=p.slug) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label>Duration
-      <select name="duration">{% for d in durations %}<option>{{ d }}</option>{% endfor %}</select>
-    </label>
-    <label>Devices <input name="max_devices" type="number" min="1" max="50" value="1"></label>
+    <label>Name <input name="assigned_to" maxlength="80" placeholder="Whose key is this?"></label>
+    <div class="row">
+      <label>Duration
+        <select name="duration">{% for d in durations %}<option>{{ d }}</option>{% endfor %}</select>
+      </label>
+      <label>Devices <input name="max_devices" type="number" min="1" max="50" value="1"></label>
+    </div>
     <button>Generate key</button>
   </form>
-  <table>
-    <thead><tr><th>Key</th><th>Term</th><th>Status</th><th>Devices</th><th></th></tr></thead>
+  <table class="stack">
+    <thead><tr><th>Name</th><th>Key</th><th>Term</th><th>Status</th><th>Devices</th><th></th></tr></thead>
     <tbody>
     {% for l in licenses %}
       <tr>
-        <td class="clip">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">unreadable (stored with a different encryption secret)</span>{% endif %}</td>
-        <td>{{ l.duration }}</td>
-        <td>
-          {% if l.revoked_at %}revoked
-          {% elif l.expires_at %}until {{ l.expires_at.strftime("%Y-%m-%d") }}
-          {% else %}unused{% endif %}
+        <td data-label="Name">
+          <form method="post" action="{{ url_for('license_name', license_id=l.id) }}" class="namebox">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input name="assigned_to" value="{{ l.assigned_to }}" maxlength="80" placeholder="No name yet" aria-label="Name">
+            <button class="ghost">Save</button>
+          </form>
         </td>
-        <td>{{ l.devices|length }}/{{ l.max_devices }}
+        <td class="clip" data-label="Key">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">unreadable (stored with a different encryption secret)</span>{% endif %}</td>
+        <td data-label="Term">{{ l.duration }}</td>
+        <td data-label="Status">
+          {% if l.revoked_at %}<span class="tag bad">revoked</span>
+          {% elif l.expires_at %}<span class="tag good">until {{ l.expires_at.strftime("%Y-%m-%d") }}</span>
+          {% else %}<span class="tag">unused</span>{% endif %}
+        </td>
+        <td data-label="Devices">{{ l.devices|length }}/{{ l.max_devices }}
           {% for d in l.devices %}<div class="muted">{{ d.id }}</div>{% endfor %}
         </td>
         <td class="actions">
@@ -96,7 +107,7 @@
         </td>
       </tr>
     {% else %}
-      <tr><td colspan="5" class="muted">No keys yet.</td></tr>
+      <tr><td colspan="6" class="muted">No keys yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
