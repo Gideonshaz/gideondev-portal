@@ -1,0 +1,26 @@
+{% macro release_rows(items) %}
+<ul class="feed">
+  {% for r in items %}
+  <li>
+    <a href="{{ url_for('project_page', slug=r[4], tab='releases') }}">
+      <span class="fi rel" aria-label="Release"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8"/></svg></span>
+      <span class="fmain"><b>{{ r[0] }}</b><span>Release · v{{ r[1] }}</span></span>
+      <span class="fside"><span class="tag {{ 'warn' if r[2] in ('prerelease', 'beta') else 'good' }}">{{ r[2] }}</span><time>{{ r[3].strftime("%d %b %Y") }}</time></span>
+    </a>
+  </li>
+  {% else %}<li class="empty">No releases yet.</li>{% endfor %}
+</ul>
+{% endmacro %}
+{% macro activation_rows(items) %}
+<ul class="feed">
+  {% for a in items %}
+  <li>
+    <a href="{{ url_for('project_page', slug=a[4], tab='keys') }}">
+      <span class="fi act" aria-label="Activation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H3zM8 21h8M12 16v5"/></svg></span>
+      <span class="fmain"><b>{{ a[0] }}</b><span>Activation · {{ a[3] or "unnamed key" }} · <code>{{ a[1][:12] }}</code></span></span>
+      <span class="fside"><span class="tag">device</span><time>{{ a[2].strftime("%d %b %H:%M") }}</time></span>
+    </a>
+  </li>
+  {% else %}<li class="empty">No device activations yet.</li>{% endfor %}
+</ul>
+{% endmacro %}

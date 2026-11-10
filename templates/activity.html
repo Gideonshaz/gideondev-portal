@@ -1,12 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Activity · GideonDev Portal{% endblock %}
 {% block body %}
+{% from "_feed.html" import release_rows, activation_rows %}
 <h1>Activity</h1>
 <p class="sub">Every release and device activation, newest first</p>
+<p class="seg"><a href="#releases-all">Releases ({{ recent_rel|length }})</a><a href="#activations">Activations ({{ recent_act|length }})</a></p>
 
 <section class="card" id="releases-all">
   <details class="msec" open><summary><h2>Releases ({{ recent_rel|length }})</h2></summary>
-  <table class="stack">
+  {{ release_rows(recent_rel) }}
+  <table class="stack desktable">
     <thead><tr><th>Project</th><th>Version</th><th>Date</th></tr></thead>
     {% for r in recent_rel %}<tr>
       <td data-label="Project"><a href="{{ url_for('project_page', slug=r[4], tab='releases') }}">{{ r[0] }}</a></td>
@@ -19,7 +22,8 @@
 
 <section class="card" id="activations">
   <details class="msec" open><summary><h2>Activations ({{ recent_act|length }})</h2></summary>
-  <table class="stack">
+  {{ activation_rows(recent_act) }}
+  <table class="stack desktable">
     <thead><tr><th>Project</th><th>Key name</th><th>Device</th><th>Last seen</th></tr></thead>
     {% for a in recent_act %}<tr>
       <td data-label="Project"><a href="{{ url_for('project_page', slug=a[4], tab='keys') }}">{{ a[0] }}</a></td>

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block body %}
+{% from "_feed.html" import release_rows, activation_rows %}
 <h1>Dashboard</h1>
 
 <div class="stats">
@@ -17,6 +18,7 @@
       {% for r in recent_rel %}<tr><td>{{ r[0] }}</td><td><span class="tag good">v{{ r[1] }}</span> <span class="tag">{{ r[2] }}</span></td><td>{{ r[3].strftime("%d %b %Y") }}</td></tr>
       {% else %}<tr><td colspan="3" class="muted">No releases yet.</td></tr>{% endfor %}
     </table>
+    {{ release_rows(recent_rel[:3]) }}
     <p class="seeall"><a href="{{ url_for('activity') }}">See all releases &rarr;</a></p>
   </section>
   <section class="card" id="recent-activations">
@@ -26,6 +28,7 @@
       {% for a in recent_act %}<tr><td>{{ a[0] }}</td><td><code>{{ a[1][:14] }}</code></td><td>{{ a[2].strftime("%d %b %H:%M") }}</td></tr>
       {% else %}<tr><td colspan="3" class="muted">No devices yet.</td></tr>{% endfor %}
     </table>
+    {{ activation_rows(recent_act[:3]) }}
     <p class="seeall"><a href="{{ url_for('activity') }}#activations">See all activations &rarr;</a></p>
   </section>
 </div>
