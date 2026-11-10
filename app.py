@@ -399,15 +399,23 @@ def dashboard():
     with db() as conn:
         rows = conn.execute("""
             SELECT p.slug, p.name, p.is_public,
-                   (SELECT count(*) FROM releases r WHERE r.project_id=p.id AND NOT r.yanked),
+                   (SELECT count(*) FROM releases r WHERE r.project_id=p.id AND NOT r.yanked)
+                   + (SELECT count(*) FROM github_releases g WHERE g.project_id=p.id
+                      AND g.removed_at IS NULL AND lower(g.repo)=lower(p.github_repo)),
                    (SELECT count(*) FROM licenses l WHERE l.project_id=p.id AND l.revoked_at IS NULL),
                    (SELECT count(*) FROM activations a JOIN licenses l ON l.id=a.license_id
                      WHERE l.project_id=p.id)
             FROM projects p ORDER BY p.name""").fetchall()
         recent_rel = conn.execute("""
-            SELECT p.name, r.version, r.channel, r.created_at FROM releases r
-            JOIN projects p ON p.id=r.project_id WHERE NOT r.yanked
-            ORDER BY r.created_at DESC LIMIT 5""").fetchall()
+            SELECT name, version, channel, at FROM (
+              SELECT p.name, r.version, r.channel, r.created_at AS at FROM releases r
+              JOIN projects p ON p.id=r.project_id WHERE NOT r.yanked
+              UNION ALL
+              SELECT p.name, g.version, CASE WHEN g.prerelease THEN 'prerelease' ELSE 'stable' END,
+                     coalesce(g.published_at, g.first_seen_at) FROM github_releases g
+              JOIN projects p ON p.id=g.project_id
+              WHERE g.removed_at IS NULL AND lower(g.repo)=lower(p.github_repo)
+            ) x ORDER BY at DESC LIMIT 5""").fetchall()
         recent_act = conn.execute("""
             SELECT p.name, a.device_id, a.last_seen FROM activations a
             JOIN licenses l ON l.id=a.license_id JOIN projects p ON p.id=l.project_id

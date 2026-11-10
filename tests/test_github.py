@@ -204,3 +204,12 @@ def test_switching_repo_keeps_old_history_without_marking_it_removed(admin, fake
     assert sorted((r[0], r[3]) for r in rows) == [("0.0.1", False), ("1.0.0", False), ("1.0.1", False)]
     page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
     assert "GitHub release history (1)" in page and "removed from GitHub" not in page
+
+
+def test_dashboard_shows_github_releases(admin, fake_github):
+    fake_github["releases"] = [rel(1, "v1.0.0"), rel(2, "v1.2.0", pre=True)]
+    connect(admin)
+    html = admin.get("/").get_data(as_text=True)
+    recent = html.split("Recent releases")[1].split("</table>")[0]
+    assert "v1.2.0" in recent and "prerelease" in recent and "v1.0.0" in recent
+    assert "No releases yet" not in recent
