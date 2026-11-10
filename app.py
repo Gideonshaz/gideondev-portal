@@ -25,9 +25,10 @@ import github_sync
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from flask import (Flask, abort, flash, jsonify, redirect, render_template,
+from flask import (Flask, abort, flash, g, jsonify, redirect, render_template,
                    request, session, url_for)
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from migrations import MIGRATIONS
 
@@ -114,7 +115,38 @@ def admin_only(fn):
     @wraps(fn)
     def wrapped(*args, **kwargs):
         if not session.get("admin"):
+            if session.get("staff_id"):
+                return redirect(url_for("team_home"))
             return redirect(url_for("login"))
+        return fn(*args, **kwargs)
+    return wrapped
+
+
+DUMMY_HASH = generate_password_hash("not-a-real-password")  # equalises timing for unknown users
+USERNAME_RE = re.compile(r"^[a-z0-9._-]{3,40}$")
+
+
+def current_staff():
+    """The signed-in team member, re-checked on every request (disable/reset takes effect at once)."""
+    sid = session.get("staff_id")
+    if not sid:
+        return None
+    with db() as conn:
+        r = conn.execute("""SELECT id, username, project_ids, active, session_version
+                            FROM team_users WHERE id=%s""", (sid,)).fetchone()
+    if not r or not r[3] or r[4] != session.get("staff_ver"):
+        session.clear()
+        return None
+    return dict(id=r[0], username=r[1], project_ids=list(r[2] or []))
+
+
+def staff_only(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        user = current_staff()
+        if not user:
+            return redirect(url_for("login"))
+        g.staff = user
         return fn(*args, **kwargs)
     return wrapped
 
@@ -373,6 +405,20 @@ def login():
             if login_throttled(conn, ip):
                 return render_template("login.html",
                                        error="Too many attempts. Try again in 15 minutes."), 429
+            username = request.form.get("username", "").strip().lower()[:40]
+            if username:
+                row = conn.execute("""SELECT id, password_hash, active, session_version
+                                      FROM team_users WHERE username=%s""", (username,)).fetchone()
+                ok = check_password_hash(row[1] if row else DUMMY_HASH, request.form.get("password", ""))
+                if row and ok and row[2]:
+                    conn.execute("DELETE FROM login_attempts WHERE ip=%s", (ip,))
+                    conn.execute("UPDATE team_users SET last_login_at=now() WHERE id=%s", (row[0],))
+                    session.clear()
+                    session["staff_id"], session["staff_ver"] = row[0], row[3]
+                    session["csrf"] = secrets.token_urlsafe(32)
+                    return redirect(url_for("team_home"))
+                conn.execute("INSERT INTO login_attempts (ip) VALUES (%s)", (ip,))
+                return render_template("login.html", error="Incorrect username or password."), 401
             if hmac.compare_digest(request.form.get("password", ""), os.environ["ADMIN_PASSWORD"]):
                 conn.execute("DELETE FROM login_attempts WHERE ip=%s", (ip,))
                 session.clear()
@@ -385,8 +431,9 @@ def login():
 
 
 @app.post("/logout")
-@admin_only
 def logout():
+    if not (session.get("admin") or session.get("staff_id")):
+        return redirect(url_for("login"))
     csrf()
     session.clear()
     return redirect(url_for("login"))
@@ -475,7 +522,7 @@ def project_page(slug):
         rels = releases_for(conn, p["id"], include_yanked=True)
         lic_rows = conn.execute("""
             SELECT id, key_ciphertext, duration, max_devices, activated_at, expires_at, revoked_at,
-                   assigned_to
+                   assigned_to, created_by
             FROM licenses WHERE project_id=%s ORDER BY id DESC""", (p["id"],)).fetchall()
         devices = {}
         for lid, dev, seen in conn.execute("""
@@ -500,7 +547,7 @@ def project_page(slug):
             left = f"{days} days left" if days < 60 else f"{days // 30} months left"
         licenses.append(dict(id=r[0], key=show_key(r[1]), duration=r[2],
                              max_devices=r[3], activated_at=r[4], expires_at=exp, revoked_at=r[6],
-                             assigned_to=r[7], status=status, left=left,
+                             assigned_to=r[7], created_by=r[8], status=status, left=left,
                              devices=devices.get(r[0], [])))
     stats = dict(total=len(licenses),
                  active=sum(1 for l in licenses if l["status"] == "active"),
@@ -567,6 +614,170 @@ def project_edit(slug):
         conn.execute("UPDATE licenses SET product=%s WHERE project_id=%s", (name, p["id"]))
     flash("Project saved.")
     return redirect(url_for("project_page", slug=slug))
+
+
+# ---------------------------------------------------------------- team members (limited access)
+def _key_rows(conn, project_id, q=""):
+    now = datetime.now(timezone.utc)
+    rows = conn.execute("""
+        SELECT l.id, l.key_ciphertext, l.duration, l.max_devices, l.expires_at, l.revoked_at,
+               l.assigned_to, l.created_by,
+               (SELECT count(*) FROM activations a WHERE a.license_id=l.id)
+        FROM licenses l WHERE l.project_id=%s ORDER BY l.id DESC""", (project_id,)).fetchall()
+    out = []
+    for r in rows:
+        status = ("revoked" if r[5] else "unused" if r[4] is None
+                  else "expired" if r[4] < now else "active")
+        item = dict(id=r[0], key=show_key(r[1]), duration=r[2], max_devices=r[3], expires_at=r[4],
+                    status=status, assigned_to=r[6], created_by=r[7], devices=r[8])
+        if q and q not in (item["assigned_to"] or "").lower() and q not in (item["key"] or "").lower():
+            continue
+        out.append(item)
+    return out
+
+
+def _team_project(slug):
+    with db() as conn:
+        p = get_project(conn, slug)
+    if p["id"] not in g.staff["project_ids"]:
+        abort(404)
+    return p
+
+
+@app.get("/team")
+@staff_only
+def team_home():
+    with db() as conn:
+        rows = conn.execute("""SELECT p.slug, p.name,
+               (SELECT count(*) FROM licenses l WHERE l.project_id=p.id AND l.revoked_at IS NULL)
+               FROM projects p WHERE p.id = ANY(%s) ORDER BY p.name""",
+                            (g.staff["project_ids"],)).fetchall()
+    return render_template("team.html", staff=g.staff,
+                           projects=[dict(slug=r[0], name=r[1], key_count=r[2]) for r in rows])
+
+
+@app.get("/team/<slug>")
+@staff_only
+def team_project(slug):
+    p = _team_project(slug)
+    q = request.args.get("q", "").strip().lower()[:80]
+    with db() as conn:
+        keys = _key_rows(conn, p["id"], q)
+    return render_template("team_project.html", staff=g.staff, p=p, keys=keys, q=q,
+                           durations=DURATIONS)
+
+
+@app.post("/team/<slug>/licenses")
+@staff_only
+def team_generate(slug):
+    csrf()
+    _team_project(slug)
+    _generate_key(slug, g.staff["username"], g.staff["project_ids"])
+    return redirect(url_for("team_project", slug=slug))
+
+
+@app.post("/team/licenses/<int:license_id>/name")
+@staff_only
+def team_key_name(license_id):
+    csrf()
+    with db() as conn:
+        row = conn.execute("""SELECT p.slug, p.id FROM licenses l JOIN projects p ON p.id=l.project_id
+                              WHERE l.id=%s""", (license_id,)).fetchone()
+        if not row or row[1] not in g.staff["project_ids"]:
+            abort(404)
+        conn.execute("UPDATE licenses SET assigned_to=%s WHERE id=%s",
+                     (clean_label(request.form.get("assigned_to"), 80), license_id))
+    flash("Name saved.")
+    return redirect(url_for("team_project", slug=row[0]))
+
+
+# ---------------------------------------------------------------- owner: manage team accounts
+@app.get("/users")
+@admin_only
+def users_page():
+    with db() as conn:
+        projects = conn.execute("SELECT id, name FROM projects ORDER BY name").fetchall()
+        users = conn.execute("""SELECT id, username, project_ids, active, created_at, last_login_at
+                                FROM team_users ORDER BY username""").fetchall()
+    names = {r[0]: r[1] for r in projects}
+    return render_template("users.html", nav="projects", projects=projects, names=names,
+                           users=[dict(id=u[0], username=u[1], project_ids=list(u[2] or []),
+                                       active=u[3], created_at=u[4], last_login_at=u[5])
+                                  for u in users])
+
+
+def _picked_projects(conn):
+    valid = {r[0] for r in conn.execute("SELECT id FROM projects")}
+    picked = []
+    for v in request.form.getlist("project_ids"):
+        if v.isdigit() and int(v) in valid:
+            picked.append(int(v))
+    return sorted(set(picked))
+
+
+@app.post("/users")
+@admin_only
+def users_create():
+    csrf()
+    username = request.form.get("username", "").strip().lower()
+    password = request.form.get("password", "")
+    if not USERNAME_RE.match(username):
+        flash("Username: 3-40 characters, lowercase letters, numbers, dot, dash or underscore.")
+        return redirect(url_for("users_page"))
+    if len(password) < 10:
+        flash("Password must be at least 10 characters.")
+        return redirect(url_for("users_page"))
+    with db() as conn:
+        ids = _picked_projects(conn)
+        if not ids:
+            flash("Pick at least one project.")
+            return redirect(url_for("users_page"))
+        try:
+            conn.execute("""INSERT INTO team_users (username, password_hash, project_ids)
+                            VALUES (%s,%s,%s)""", (username, generate_password_hash(password), ids))
+        except psycopg.errors.UniqueViolation:
+            flash("That username already exists.")
+            return redirect(url_for("users_page"))
+    flash(f"Account {username} created. Share the username and password with them privately.")
+    return redirect(url_for("users_page"))
+
+
+@app.post("/users/<int:user_id>/projects")
+@admin_only
+def users_projects(user_id):
+    csrf()
+    with db() as conn:
+        ids = _picked_projects(conn)
+        conn.execute("UPDATE team_users SET project_ids=%s WHERE id=%s", (ids, user_id))
+    flash("Access updated.")
+    return redirect(url_for("users_page"))
+
+
+@app.post("/users/<int:user_id>/active")
+@admin_only
+def users_active(user_id):
+    csrf()
+    active = request.form.get("active") == "1"
+    with db() as conn:
+        conn.execute("""UPDATE team_users SET active=%s, session_version=session_version+1
+                        WHERE id=%s""", (active, user_id))
+    flash("Account enabled." if active else "Account disabled. They are signed out now.")
+    return redirect(url_for("users_page"))
+
+
+@app.post("/users/<int:user_id>/password")
+@admin_only
+def users_password(user_id):
+    csrf()
+    password = request.form.get("password", "")
+    if len(password) < 10:
+        flash("Password must be at least 10 characters.")
+        return redirect(url_for("users_page"))
+    with db() as conn:
+        conn.execute("""UPDATE team_users SET password_hash=%s, session_version=session_version+1
+                        WHERE id=%s""", (generate_password_hash(password), user_id))
+    flash("Password changed. They are signed out and must use the new password.")
+    return redirect(url_for("users_page"))
 
 
 @app.post("/projects/<slug>/github")
@@ -943,10 +1154,8 @@ def release_yank(release_id):
     return redirect(url_for("project_page", slug=row[0]))
 
 
-@app.post("/projects/<slug>/licenses")
-@admin_only
-def license_generate(slug):
-    csrf()
+def _generate_key(slug, created_by, project_ids=None):
+    """Create one license key. Returns the project dict. project_ids limits team members."""
     duration = request.form.get("duration")
     try:
         max_devices = int(request.form.get("max_devices", "1"))
@@ -958,13 +1167,23 @@ def license_generate(slug):
     assigned_to = clean_label(request.form.get("assigned_to"), 80)
     with db() as conn:
         p = get_project(conn, slug)
+        if project_ids is not None and p["id"] not in project_ids:
+            abort(404)
         conn.execute("""INSERT INTO licenses (key_hash, key_ciphertext, product, months, duration,
-                                              project_id, max_devices, assigned_to)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                              project_id, max_devices, assigned_to, created_by)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                      (hashlib.sha256(key.encode()).hexdigest(), fernet.encrypt(key.encode()).decode(),
                       p["name"], DURATIONS[duration], duration, p["id"], max_devices,
-                      assigned_to))
+                      assigned_to, created_by))
     flash("Key generated.")
+    return p
+
+
+@app.post("/projects/<slug>/licenses")
+@admin_only
+def license_generate(slug):
+    csrf()
+    _generate_key(slug, "owner")
     return redirect(url_for("project_page", slug=slug))
 
 

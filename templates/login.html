@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Sign in · GideonDev Portal{% endblock %}
 {% block body %}
-<span class="pill">Admin</span>
 <h1>Welcome back</h1>
 <p class="sub">Licenses, updates and projects in one place</p>
 <section class="card">
   {% if error %}<p class="flash">{{ error }}</p>{% endif %}
   <form method="post">
-    <label>Admin password
-      <input type="password" name="password" autocomplete="current-password" required autofocus>
+    <label>Username <span class="muted">(team members only — leave empty for the owner)</span>
+      <input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40">
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required>
     </label>
     <button>Sign in</button>
   </form>

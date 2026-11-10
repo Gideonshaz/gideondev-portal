@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}License keys · GideonDev{% endblock %}
+{% block body %}
+<h1>License keys</h1>
+<p class="sub">Signed in as {{ staff.username }}</p>
+<div class="tiles">
+{% for p in projects %}
+  <a class="tile" href="{{ url_for('team_project', slug=p.slug) }}">
+    <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
+    <span class="txt"><span class="name">{{ p.name }}</span><span class="chips"><span class="chip">{{ p.key_count }} keys</span></span></span>
+    <span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+  </a>
+{% else %}
+  <section class="card"><p class="muted">No projects assigned to your account yet.</p></section>
+{% endfor %}
+</div>
+{% endblock %}

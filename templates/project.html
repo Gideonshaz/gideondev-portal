@@ -194,7 +194,7 @@
             <input type="hidden" name="csrf" value="{{ csrf }}">
             <input name="assigned_to" value="{{ l.assigned_to }}" maxlength="80" placeholder="No name yet" aria-label="Name">
             <button class="ghost">Save</button>
-          </form>
+          </form>{% if l.created_by and l.created_by != "owner" %}<div class="muted">made by {{ l.created_by }}</div>{% endif %}
         </td>
         <td class="clip" data-label="Key">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">can't display this key</span>{% endif %}</td>
         <td data-label="Term">{{ l.duration }}</td>

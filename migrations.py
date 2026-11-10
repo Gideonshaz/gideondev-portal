@@ -146,4 +146,17 @@ MIGRATIONS = [
             UNIQUE (project_id, gh_id)
         );
     """),
+    ("007_team_accounts", """
+        CREATE TABLE IF NOT EXISTS team_users (
+            id SERIAL PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            project_ids INTEGER[] NOT NULL DEFAULT '{}',
+            active BOOLEAN NOT NULL DEFAULT true,
+            session_version INTEGER NOT NULL DEFAULT 1,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_login_at TIMESTAMPTZ
+        );
+        ALTER TABLE licenses ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
+    """),
 ]

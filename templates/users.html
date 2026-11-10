@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Team accounts · GideonDev Portal{% endblock %}
+{% block body %}
+<h1>Team accounts</h1>
+<p class="sub">Team members can only generate keys, see the key list and edit key names for the apps you tick.</p>
+
+<section class="card">
+  <h2>Add a team member</h2>
+  <form method="post" action="{{ url_for('users_create') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="row">
+      <label>Username <input name="username" required maxlength="40" autocapitalize="none" spellcheck="false" placeholder="e.g. ahmad"></label>
+      <label>Password <input name="password" type="password" required minlength="10" autocomplete="new-password" placeholder="10+ characters"></label>
+    </div>
+    <p class="muted">Apps they can manage keys for:</p>
+    {% for pid, pname in projects %}<label class="check"><input type="checkbox" name="project_ids" value="{{ pid }}"> {{ pname }}</label>{% endfor %}
+    <button>Create account</button>
+  </form>
+</section>
+
+{% for u in users %}
+<section class="card">
+  <h2>{{ u.username }} {% if u.active %}<span class="tag good">active</span>{% else %}<span class="tag bad">disabled</span>{% endif %}</h2>
+  <p class="muted">Last sign-in: {{ u.last_login_at.strftime("%d %b %Y, %H:%M UTC") if u.last_login_at else "never" }}</p>
+  <details class="sub"><summary>Apps ({{ u.project_ids|length }})</summary>
+    <form method="post" action="{{ url_for('users_projects', user_id=u.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for pid, pname in projects %}<label class="check"><input type="checkbox" name="project_ids" value="{{ pid }}"{% if pid in u.project_ids %} checked{% endif %}> {{ pname }}</label>{% endfor %}
+      <button class="ghost">Save access</button>
+    </form>
+  </details>
+  <details class="sub"><summary>Change password</summary>
+    <form method="post" action="{{ url_for('users_password', user_id=u.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>New password <input name="password" type="password" required minlength="10" autocomplete="new-password"></label>
+      <button class="ghost">Set password</button>
+    </form>
+  </details>
+  <form method="post" action="{{ url_for('users_active', user_id=u.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="active" value="{{ '0' if u.active else '1' }}">
+    <button class="{{ 'danger' if u.active else 'ghost' }}">{{ "Disable account" if u.active else "Enable account" }}</button>
+  </form>
+</section>
+{% endfor %}
+{% endblock %}
