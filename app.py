@@ -494,7 +494,8 @@ def project_page(slug):
     with db() as conn:
         for g in conn.execute("""SELECT tag, name, version, body, prerelease, published_at,
                                         html_url, assets, removed_at
-                                 FROM github_releases WHERE project_id=%s""", (p["id"],)):
+                                 FROM github_releases WHERE project_id=%s
+                                 AND lower(repo)=lower(%s)""", (p["id"], p["github_repo"])):
             gh.append(dict(tag=g[0], name=g[1], version=g[2], body=g[3], prerelease=g[4],
                            published_at=g[5], html_url=g[6], assets=g[7] or [],
                            removed_at=g[8]))
@@ -845,6 +846,7 @@ def github_webhook():
         secret = app_row["webhook_secret"] if app_row else ""
     if not secret:
         return jsonify(error="webhook disabled"), 503
+    request.max_content_length = 5_000_000  # release payloads exceed the 16 KB site-wide limit
     body = request.get_data(cache=False)
     if len(body) > 5_000_000 or not github_sync.webhook_signature_ok(
             secret, body, request.headers.get("X-Hub-Signature-256", "")):

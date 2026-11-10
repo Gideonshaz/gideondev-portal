@@ -180,3 +180,27 @@ def test_real_github_payloads_import(admin, fake_github):
     assert "1.0.5" in versions and "0.7.2" in versions and len(versions) == len(fake_github["releases"])
     page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
     assert "HYEnhanceStudio-v1.0.5-Setup.exe" in page
+
+
+def test_large_webhook_payload_is_accepted_but_site_limit_stays(admin, fake_github, monkeypatch):
+    fake_github["releases"] = [rel(1, "v1.0.0")]
+    connect(admin)
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "whsec")
+    body = json.dumps({"action": "edited", "repository": {"full_name": "Gideonshaz/GatePassKiosk-Windows"},
+                       "release": {"body": "x" * 60000}}).encode()
+    r = admin.post("/api/github/webhook", data=body, headers={
+        "X-GitHub-Event": "release", "X-Hub-Signature-256": _signed(body), "Content-Type": "application/json"})
+    assert r.status_code == 200
+    big = admin.post("/login", data={"password": "x" * 60000})
+    assert big.status_code == 413
+
+
+def test_switching_repo_keeps_old_history_without_marking_it_removed(admin, fake_github):
+    fake_github["releases"] = [rel(1, "v1.0.0"), rel(2, "v1.0.1")]
+    connect(admin, repo="Gideonshaz/Old")
+    fake_github["releases"] = [rel(9, "v0.0.1")]
+    connect(admin, repo="Gideonshaz/New")
+    rows = gh_rows()
+    assert sorted((r[0], r[3]) for r in rows) == [("0.0.1", False), ("1.0.0", False), ("1.0.1", False)]
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert "GitHub release history (1)" in page and "removed from GitHub" not in page

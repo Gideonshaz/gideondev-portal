@@ -229,8 +229,8 @@ def apply_releases(conn, project_id, repo, prefix, releases, now=None):
                          (repo,) + row + (now, project_id, gid))
             updated += int(changed)
     removed = conn.execute("""UPDATE github_releases SET removed_at=%s
-                              WHERE project_id=%s AND removed_at IS NULL
-                              AND NOT (gh_id = ANY(%s))""", (now, project_id, seen)).rowcount
+                              WHERE project_id=%s AND removed_at IS NULL AND lower(repo)=lower(%s)
+                              AND NOT (gh_id = ANY(%s))""", (now, project_id, repo, seen)).rowcount
     return dict(total=len(seen), added=added, updated=updated, removed=removed)
 
 
