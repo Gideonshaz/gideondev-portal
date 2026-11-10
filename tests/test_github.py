@@ -210,6 +210,6 @@ def test_dashboard_shows_github_releases(admin, fake_github):
     fake_github["releases"] = [rel(1, "v1.0.0"), rel(2, "v1.2.0", pre=True)]
     connect(admin)
     html = admin.get("/").get_data(as_text=True)
-    recent = html.split("Recent releases")[1].split("</table>")[0]
+    recent = html.split('id="recent-releases"')[1].split("</table>")[0]
     assert "v1.2.0" in recent and "prerelease" in recent and "v1.0.0" in recent
     assert "No releases yet" not in recent

@@ -14,7 +14,7 @@
 .content main, .content .topbar { max-width: 1240px; padding-left: 32px; padding-right: 32px; }
 .content main { padding-top: 28px; }
 .pill { display: none; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.stats, .stats:not(.pstats) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
 .stat { padding: 18px 20px; border-radius: 20px; }
 .stat b { font-size: 28px; line-height: 1.1; overflow-wrap: anywhere; }
 .stat span { font-size: 14px; }
@@ -27,3 +27,4 @@ table.stack thead { display: table-header-group; }
 .card { padding: 26px; }
 .deskonly { display: block; }
 .viewswitch { text-align: left; }
+.dashjump { display: none; }

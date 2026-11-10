@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
-<span class="pill">Admin</span>
-<h1>Projects</h1>
-<p class="sub">Tap a project to manage its updates and license keys</p>
+<h1>Dashboard</h1>
+<p class="jump dashjump"><a class="chip" href="#projects">My projects</a> <a class="chip" href="#recent-releases">Recent releases</a> <a class="chip" href="#recent-activations">Recent activations</a></p>
 
 <div class="stats">
   <div class="stat"><b>{{ totals.projects }}</b><span>Projects</span></div>
@@ -12,7 +11,7 @@
 </div>
 
 <div class="panels">
-  <section class="card">
+  <section class="card" id="recent-releases">
     <h2>Recent releases</h2>
     <table>
       <thead><tr><th>Project</th><th>Version</th><th>Date</th></tr></thead>
@@ -20,7 +19,7 @@
       {% else %}<tr><td colspan="3" class="muted">No releases yet.</td></tr>{% endfor %}
     </table>
   </section>
-  <section class="card">
+  <section class="card" id="recent-activations">
     <h2>Recent activations</h2>
     <table>
       <thead><tr><th>Project</th><th>Device</th><th>Last seen</th></tr></thead>
@@ -30,7 +29,7 @@
   </section>
 </div>
 
-<h2 class="deskonly">My projects</h2>
+<h2 id="projects">My projects</h2>
 <div class="tiles">
 {% for p in projects %}
   <a class="tile" href="{{ url_for('project_page', slug=p.slug) }}">

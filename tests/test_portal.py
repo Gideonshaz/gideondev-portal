@@ -379,3 +379,20 @@ def test_view_switch_is_safe(client):
 def test_project_page_section_order(admin):
     page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
     assert page.index('id="releases"') < page.index('id="keys"') < page.index('id="details"')
+
+
+def test_mobile_sections_are_collapsible_and_keep_order(admin):
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert page.count('<details class="msec" open>') == 4  # github, releases, keys, details
+    assert "Existing keys (" in page and "Portal-managed releases (" in page
+    assert page.index('id="releases"') < page.index('id="keys"') < page.index('id="details"')
+    assert "app.js" in page
+    filtered = admin.get("/projects/gatepasskiosk?q=x").get_data(as_text=True)
+    assert "data-keep-open><summary>Existing keys" in filtered
+
+
+def test_dashboard_has_mobile_navigation(admin):
+    page = admin.get("/").get_data(as_text=True)
+    for anchor in ('href="#projects"', 'id="projects"', 'id="recent-releases"', 'id="recent-activations"'):
+        assert anchor in page
+    assert "#projects" in admin.get("/projects/gatepasskiosk").get_data(as_text=True)

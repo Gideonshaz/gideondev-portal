@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ p.name }} · GideonDev Portal{% endblock %}
 {% block body %}
-<a class="pill" href="{{ url_for('dashboard') }}">&larr; All projects</a>
+<a class="pill" href="{{ url_for('dashboard') }}#projects">&larr; All projects</a>
 <h1>{{ p.name }} <span class="muted">{{ p.slug }}</span></h1>
 <p class="sub">{{ "Shown on the public list" if p.is_public else "Private project" }}</p>
 
@@ -15,7 +15,7 @@
 
 
 <section class="card" id="github">
-  <h2>GitHub integration</h2>
+  <details class="msec" open><summary><h2>GitHub integration</h2></summary>
   {% if p.github_repo %}
     <p><b>{{ p.github_repo }}</b>{% if p.github_tag_prefix %} <span class="tag">tags starting “{{ p.github_tag_prefix }}”</span>{% endif %}
       {% if p.gh_sync_ok %}<span class="tag good">connected</span>{% elif p.gh_sync_ok == false %}<span class="tag bad">sync failed</span>{% else %}<span class="tag">not synced yet</span>{% endif %}</p>
@@ -41,11 +41,12 @@
       {% if p.github_repo %}<p class="muted">Clear the repository field and save to disconnect. Imported history stays.</p>{% endif %}
     </form>
   </details>
+</details>
 </section>
 
 {% if p.github_repo %}
 <section class="card" id="newrelease">
-  <h2>Create new release</h2>
+  <details class="msec" open><summary><h2>Create new release</h2></summary>
   {% if not gh_draft %}
   <p class="muted">Step 1 of 3. Creates a <b>draft</b> on GitHub. Drafts are invisible to the installed apps' updaters.</p>
   <form method="post" action="{{ url_for('github_draft_create', slug=p.slug) }}">
@@ -73,17 +74,18 @@
   </div>
   <form method="post" action="{{ url_for('github_draft_discard', slug=p.slug) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">Discard draft</button></form>
   {% endif %}
+</details>
 </section>
 {% endif %}
 
 <section class="card" id="releases">
-  <h2>Releases &amp; updates</h2>
+  <details class="msec" open><summary><h2>Releases &amp; updates</h2>{% if gh %}<span class="sumline">Latest {{ gh_latest.version if gh_latest else "—" }}{% if gh_pre %} · prerelease {{ gh_pre.version }}{% endif %}</span>{% endif %}</summary>
   {% if gh %}
   <div class="pstats ghsum">
     <div class="stat"><b>{{ gh_latest.version if gh_latest else "—" }}</b><span>Latest stable{% if gh_latest and gh_latest.published_at %} · {{ gh_latest.published_at.strftime("%d %b %Y") }}{% endif %}</span></div>
     <div class="stat"><b>{{ gh_pre.version if gh_pre else "—" }}</b><span>Newer prerelease</span></div>
   </div>
-  <h3>GitHub release history ({{ gh|length }})</h3>
+  <details class="sub" open><summary>GitHub release history ({{ gh|length }})</summary>
   {% for g in gh %}
   <details class="rel{{ ' dim' if g.removed_at }}">
     <summary>
@@ -103,9 +105,10 @@
     {% endif %}
   </details>
   {% endfor %}
-  <h3>Portal-managed releases</h3>
-  <p class="muted">Used by the portal's own update API. Separate from the GitHub list above.</p>
+  </details>
   {% endif %}
+  <details class="sub" open><summary>Portal-managed releases ({{ releases|length }})</summary>
+  <p class="muted">Used by the portal's own update API. Your installed apps update from GitHub, so this list can stay empty.</p>
   <table class="stack">
     <thead><tr><th>Version</th><th>Channel</th><th>Link</th><th>Date</th><th></th></tr></thead>
     <tbody>
@@ -142,10 +145,12 @@
     <label class="check"><input type="checkbox" name="mandatory"> Mandatory update</label>
     <button>Publish</button>
   </form>
+  </details>
+</details>
 </section>
 
 <section class="card" id="keys">
-  <h2>License keys</h2>
+  <details class="msec" open><summary><h2>License keys</h2><span class="sumline">{{ stats.active }} active · {{ stats.unused }} unused</span></summary>
   <form method="post" action="{{ url_for('license_generate', slug=p.slug) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Name <input name="assigned_to" maxlength="80" placeholder="Whose key is this?"></label>
@@ -167,6 +172,7 @@
     </label>
     <button class="ghost">Filter</button>
   </form>
+  <details class="sub" open{% if q or status_filter %} data-keep-open{% endif %}><summary>Existing keys ({{ licenses|length }})</summary>
   <table class="stack">
     <thead><tr><th>Name</th><th>Key</th><th>Term</th><th>Status</th><th>Devices</th><th></th></tr></thead>
     <tbody>
@@ -208,10 +214,12 @@
     {% endfor %}
     </tbody>
   </table>
+  </details>
+</details>
 </section>
 
 <section class="card" id="details">
-  <h2>Project details &amp; settings</h2>
+  <details class="msec" open><summary><h2>Project details &amp; settings</h2></summary>
   <form method="post" action="{{ url_for('project_edit', slug=p.slug) }}">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Name <input name="name" value="{{ p.name }}" maxlength="80" required></label>
@@ -221,5 +229,6 @@
     <button>Save</button>
   </form>
   <p class="muted">App update check: <code>/api/v1/projects/{{ p.slug }}/latest?current=1.0.0</code></p>
+</details>
 </section>
 {% endblock %}
