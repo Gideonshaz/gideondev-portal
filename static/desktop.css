@@ -28,3 +28,7 @@ table.stack thead { display: table-header-group; }
 .deskonly { display: block; }
 .viewswitch { text-align: left; }
 .dashjump { display: none; }
+.bottomnav, .tabs { display: none; }
+.tabpane { display: block; }
+body:has(.bottomnav) main { padding-bottom: 28px; }
+table.recent tbody tr:nth-child(n+4) { display: table-row; }

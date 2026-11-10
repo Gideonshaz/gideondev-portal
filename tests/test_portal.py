@@ -391,8 +391,27 @@ def test_mobile_sections_are_collapsible_and_keep_order(admin):
     assert "data-keep-open><summary>Existing keys" in filtered
 
 
-def test_dashboard_has_mobile_navigation(admin):
-    page = admin.get("/").get_data(as_text=True)
-    for anchor in ('href="#projects"', 'id="projects"', 'id="recent-releases"', 'id="recent-activations"'):
-        assert anchor in page
-    assert "#projects" in admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+def test_app_navigation_pages_and_project_tabs(admin):
+    home = admin.get("/").get_data(as_text=True)
+    for link in ('href="/"', 'href="/projects"', 'href="/activity"', 'class="bottomnav"'):
+        assert link in home
+    assert 'id="recent-releases"' in home and "See all activations" in home
+    projects = admin.get("/projects").get_data(as_text=True)
+    assert "gatepasskiosk" in projects and "Add a project" in projects
+    assert "Activations (" in admin.get("/activity").get_data(as_text=True)
+    page = admin.get("/projects/gatepasskiosk").get_data(as_text=True)
+    assert '<div class="tabpane active" data-tab="overview">' in page
+    for tab in ("releases", "keys", "settings"):
+        assert f'<div class="tabpane" data-tab="{tab}">' in page
+    keys = admin.get("/projects/gatepasskiosk?tab=keys").get_data(as_text=True)
+    assert '<div class="tabpane active" data-tab="keys">' in keys
+    filtered = admin.get("/projects/gatepasskiosk?q=zz").get_data(as_text=True)
+    assert '<div class="tabpane active" data-tab="keys">' in filtered
+    assert '<div class="tabpane active" data-tab="overview">' in admin.get(
+        "/projects/gatepasskiosk?tab=bogus").get_data(as_text=True)
+    anon = portal.app.test_client()
+    anon.environ_base["wsgi.url_scheme"] = "https"
+    for path in ("/projects", "/activity"):
+        assert "/login" in anon.get(path).headers["Location"]
+    r = post(admin, "/projects", name="", slug="x")
+    assert r.headers["Location"].endswith("/projects")

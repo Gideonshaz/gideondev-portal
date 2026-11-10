@@ -393,40 +393,60 @@ def logout():
 
 
 # ---------------------------------------------------------------- admin: dashboard & projects
-@app.get("/")
-@admin_only
-def dashboard():
-    with db() as conn:
-        rows = conn.execute("""
-            SELECT p.slug, p.name, p.is_public,
-                   (SELECT count(*) FROM releases r WHERE r.project_id=p.id AND NOT r.yanked)
-                   + (SELECT count(*) FROM github_releases g WHERE g.project_id=p.id
-                      AND g.removed_at IS NULL AND lower(g.repo)=lower(p.github_repo)),
-                   (SELECT count(*) FROM licenses l WHERE l.project_id=p.id AND l.revoked_at IS NULL),
-                   (SELECT count(*) FROM activations a JOIN licenses l ON l.id=a.license_id
-                     WHERE l.project_id=p.id)
-            FROM projects p ORDER BY p.name""").fetchall()
-        recent_rel = conn.execute("""
-            SELECT name, version, channel, at FROM (
-              SELECT p.name, r.version, r.channel, r.created_at AS at FROM releases r
-              JOIN projects p ON p.id=r.project_id WHERE NOT r.yanked
-              UNION ALL
-              SELECT p.name, g.version, CASE WHEN g.prerelease THEN 'prerelease' ELSE 'stable' END,
-                     coalesce(g.published_at, g.first_seen_at) FROM github_releases g
-              JOIN projects p ON p.id=g.project_id
-              WHERE g.removed_at IS NULL AND lower(g.repo)=lower(p.github_repo)
-            ) x ORDER BY at DESC LIMIT 5""").fetchall()
-        recent_act = conn.execute("""
-            SELECT p.name, a.device_id, a.last_seen FROM activations a
-            JOIN licenses l ON l.id=a.license_id JOIN projects p ON p.id=l.project_id
-            ORDER BY a.last_seen DESC LIMIT 5""").fetchall()
+def _overview(conn, limit):
+    rows = conn.execute("""
+        SELECT p.slug, p.name, p.is_public,
+               (SELECT count(*) FROM releases r WHERE r.project_id=p.id AND NOT r.yanked)
+               + (SELECT count(*) FROM github_releases g WHERE g.project_id=p.id
+                  AND g.removed_at IS NULL AND lower(g.repo)=lower(p.github_repo)),
+               (SELECT count(*) FROM licenses l WHERE l.project_id=p.id AND l.revoked_at IS NULL),
+               (SELECT count(*) FROM activations a JOIN licenses l ON l.id=a.license_id
+                 WHERE l.project_id=p.id)
+        FROM projects p ORDER BY p.name""").fetchall()
+    recent_rel = conn.execute("""
+        SELECT name, version, channel, at, slug FROM (
+          SELECT p.name, r.version, r.channel, r.created_at AS at, p.slug FROM releases r
+          JOIN projects p ON p.id=r.project_id WHERE NOT r.yanked
+          UNION ALL
+          SELECT p.name, g.version, CASE WHEN g.prerelease THEN 'prerelease' ELSE 'stable' END,
+                 coalesce(g.published_at, g.first_seen_at), p.slug FROM github_releases g
+          JOIN projects p ON p.id=g.project_id
+          WHERE g.removed_at IS NULL AND lower(g.repo)=lower(p.github_repo)
+        ) x ORDER BY at DESC LIMIT %s""", (limit,)).fetchall()
+    recent_act = conn.execute("""
+        SELECT p.name, a.device_id, a.last_seen, l.assigned_to, p.slug FROM activations a
+        JOIN licenses l ON l.id=a.license_id JOIN projects p ON p.id=l.project_id
+        ORDER BY a.last_seen DESC LIMIT %s""", (limit,)).fetchall()
     projects = [dict(slug=r[0], name=r[1], is_public=r[2], releases=r[3], licenses=r[4],
                      devices=r[5]) for r in rows]
     totals = dict(projects=len(projects), key_count=sum(p["licenses"] for p in projects),
                   devices=sum(p["devices"] for p in projects),
                   releases=sum(p["releases"] for p in projects))
-    return render_template("dashboard.html", projects=projects, totals=totals,
-                           recent_rel=recent_rel, recent_act=recent_act)
+    return dict(projects=projects, totals=totals, recent_rel=recent_rel, recent_act=recent_act)
+
+
+@app.get("/")
+@admin_only
+def dashboard():
+    with db() as conn:
+        data = _overview(conn, 5)
+    return render_template("dashboard.html", nav="home", **data)
+
+
+@app.get("/projects")
+@admin_only
+def projects_list():
+    with db() as conn:
+        data = _overview(conn, 1)
+    return render_template("projects.html", nav="projects", **data)
+
+
+@app.get("/activity")
+@admin_only
+def activity():
+    with db() as conn:
+        data = _overview(conn, 300)
+    return render_template("activity.html", nav="activity", **data)
 
 
 @app.post("/projects")
@@ -437,13 +457,13 @@ def project_create():
     name = request.form.get("name", "").strip()
     if not SLUG_RE.match(slug) or not name or len(name) > 80:
         flash("Slug must be 2-49 characters: lowercase letters, numbers, dashes. Name is required.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("projects_list"))
     try:
         with db() as conn:
             conn.execute("INSERT INTO projects (slug, name) VALUES (%s,%s)", (slug, name))
     except psycopg.errors.UniqueViolation:
         flash("That slug already exists.")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("projects_list"))
     return redirect(url_for("project_page", slug=slug))
 
 
@@ -521,7 +541,10 @@ def project_page(slug):
                            durations=DURATIONS, stats=stats, latest=latest, q=q,
                            status_filter=status_filter, gh=gh, gh_latest=gh_latest,
                            gh_pre=gh_pre, portal_versions=portal_versions,
-                           gh_connected=gh_connected, gh_draft=gh_draft,
+                           gh_connected=gh_connected, gh_draft=gh_draft, nav="projects",
+                           tab=request.args.get("tab") if request.args.get("tab") in
+                           ("overview", "releases", "keys", "settings")
+                           else ("keys" if (q or status_filter) else "overview"),
                            draft_ready=bool(gh_draft and gh_draft["checks"]
                                             and all(c[1] for c in gh_draft["checks"])))
 

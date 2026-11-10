@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Projects · GideonDev Portal{% endblock %}
+{% block body %}
+<h1>Projects</h1>
+<p class="sub">Tap a project to manage its releases and license keys</p>
+{% include "_projects.html" %}
+<p class="viewswitch"><a href="{{ url_for('github_page') }}">GitHub connection</a></p>
+{% endblock %}

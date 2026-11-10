@@ -1,15 +1,21 @@
-// Phones: start the project-page sections closed so the user picks what to open.
-// Desktop (and forced Desktop view) keeps everything open. Without this script all stays open.
+// Phones only: open the tab that holds the section we were sent to (e.g. after saving a key),
+// and start the long lists (release history, existing keys…) closed. Desktop shows everything.
 (function () {
   if (!window.matchMedia || !window.matchMedia("(max-width: 959px)").matches) return;
   var hash = decodeURIComponent(location.hash.slice(1));
   var target = hash ? document.getElementById(hash) : null;
-  var all = document.querySelectorAll("details.msec, details.sub");
-  for (var i = 0; i < all.length; i++) {
-    var d = all[i];
-    if (d.hasAttribute("data-keep-open")) continue;
-    if (target && d.classList.contains("msec") && target.contains(d)) continue; // section we jumped to
-    d.open = false;
+  if (target) {
+    var pane = target.closest(".tabpane");
+    if (pane && !pane.classList.contains("active")) {
+      var panes = document.querySelectorAll(".tabpane");
+      for (var i = 0; i < panes.length; i++) panes[i].classList.toggle("active", panes[i] === pane);
+      var tabs = document.querySelectorAll(".tabs a");
+      for (var j = 0; j < tabs.length; j++) tabs[j].classList.toggle("on", tabs[j].getAttribute("data-tab") === pane.getAttribute("data-tab"));
+    }
   }
-  if (target) { target.scrollIntoView(); }
+  var subs = document.querySelectorAll("details.sub");
+  for (var k = 0; k < subs.length; k++) {
+    if (!subs[k].hasAttribute("data-keep-open")) subs[k].open = false;
+  }
+  if (target) target.scrollIntoView();
 })();

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Activity · GideonDev Portal{% endblock %}
+{% block body %}
+<h1>Activity</h1>
+<p class="sub">Every release and device activation, newest first</p>
+
+<section class="card" id="releases-all">
+  <details class="msec" open><summary><h2>Releases ({{ recent_rel|length }})</h2></summary>
+  <table class="stack">
+    <thead><tr><th>Project</th><th>Version</th><th>Date</th></tr></thead>
+    {% for r in recent_rel %}<tr>
+      <td data-label="Project"><a href="{{ url_for('project_page', slug=r[4], tab='releases') }}">{{ r[0] }}</a></td>
+      <td data-label="Version"><span class="tag good">v{{ r[1] }}</span> <span class="tag">{{ r[2] }}</span></td>
+      <td data-label="Date">{{ r[3].strftime("%d %b %Y") }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No releases yet.</td></tr>{% endfor %}
+  </table>
+  </details>
+</section>
+
+<section class="card" id="activations">
+  <details class="msec" open><summary><h2>Activations ({{ recent_act|length }})</h2></summary>
+  <table class="stack">
+    <thead><tr><th>Project</th><th>Key name</th><th>Device</th><th>Last seen</th></tr></thead>
+    {% for a in recent_act %}<tr>
+      <td data-label="Project"><a href="{{ url_for('project_page', slug=a[4], tab='keys') }}">{{ a[0] }}</a></td>
+      <td data-label="Key name">{{ a[3] or "—" }}</td>
+      <td data-label="Device" class="clip"><code>{{ a[1] }}</code></td>
+      <td data-label="Last seen">{{ a[2].strftime("%d %b %Y %H:%M") }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No devices yet.</td></tr>{% endfor %}
+  </table>
+  </details>
+</section>
+{% endblock %}

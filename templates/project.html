@@ -1,17 +1,21 @@
 {% extends "base.html" %}
 {% block title %}{{ p.name }} · GideonDev Portal{% endblock %}
 {% block body %}
-<a class="pill" href="{{ url_for('dashboard') }}#projects">&larr; All projects</a>
+<a class="pill" href="{{ url_for('projects_list') }}">&larr; All projects</a>
 <h1>{{ p.name }} <span class="muted">{{ p.slug }}</span></h1>
 <p class="sub">{{ "Shown on the public list" if p.is_public else "Private project" }}</p>
 
+<nav class="tabs" aria-label="Project sections">
+  {% for k, label in [("overview","Overview"),("releases","Releases"),("keys","License keys"),("settings","Settings")] %}<a class="{{ 'on' if tab == k }}" data-tab="{{ k }}" href="{{ url_for('project_page', slug=p.slug, tab=k) }}">{{ label }}</a>{% endfor %}
+</nav>
+
+<div class="tabpane{{ ' active' if tab == 'overview' }}" data-tab="overview">
 <div class="stats pstats">
   <div class="stat"><b>{{ stats.active }}</b><span>Active keys</span></div>
   <div class="stat"><b>{{ stats.unused }}</b><span>Unused keys</span></div>
   <div class="stat"><b>{{ stats.devices }}</b><span>Activated devices</span></div>
   <div class="stat"><b>{{ gh_latest.version if gh_latest else (latest.version if latest else "—") }}</b><span>Latest release</span></div>
 </div>
-<p class="jump"><a class="chip" href="#github">GitHub</a> <a class="chip" href="#releases">Releases &amp; updates</a> <a class="chip" href="#keys">License keys</a> <a class="chip" href="#details">Details &amp; settings</a></p>
 
 
 <section class="card" id="github">
@@ -43,6 +47,9 @@
   </details>
 </details>
 </section>
+</div>
+
+<div class="tabpane{{ ' active' if tab == 'releases' }}" data-tab="releases">
 
 {% if p.github_repo %}
 <section class="card" id="newrelease">
@@ -148,6 +155,9 @@
   </details>
 </details>
 </section>
+</div>
+
+<div class="tabpane{{ ' active' if tab == 'keys' }}" data-tab="keys">
 
 <section class="card" id="keys">
   <details class="msec" open><summary><h2>License keys</h2><span class="sumline">{{ stats.active }} active · {{ stats.unused }} unused</span></summary>
@@ -163,6 +173,7 @@
     <button>Generate key</button>
   </form>
   <form method="get" action="{{ url_for('project_page', slug=p.slug) }}#keys" class="filter row">
+    <input type="hidden" name="tab" value="keys">
     <label>Search <input name="q" value="{{ q }}" maxlength="80" placeholder="Name or key"></label>
     <label>Status
       <select name="status">
@@ -217,6 +228,9 @@
   </details>
 </details>
 </section>
+</div>
+
+<div class="tabpane{{ ' active' if tab == 'settings' }}" data-tab="settings">
 
 <section class="card" id="details">
   <details class="msec" open><summary><h2>Project details &amp; settings</h2></summary>
@@ -231,4 +245,5 @@
   <p class="muted">App update check: <code>/api/v1/projects/{{ p.slug }}/latest?current=1.0.0</code></p>
 </details>
 </section>
+</div>
 {% endblock %}
