@@ -656,6 +656,34 @@ def team_home():
                            projects=[dict(slug=r[0], name=r[1], key_count=r[2]) for r in rows])
 
 
+@app.get("/team/dashboard")
+@staff_only
+def team_dashboard():
+    """Read-only overview for team members: every app and its releases, but license counts and
+    device lists only for the apps assigned to this member."""
+    mine = g.staff["project_ids"]
+    with db() as conn:
+        data = _overview(conn, 8)
+        ids = {r[1]: r[0] for r in conn.execute("SELECT id, slug FROM projects")}
+        dev_rows = conn.execute("""
+            SELECT p.name, p.slug, l.assigned_to, a.device_id, a.last_seen
+            FROM activations a JOIN licenses l ON l.id=a.license_id
+            JOIN projects p ON p.id=l.project_id
+            WHERE p.id = ANY(%s) ORDER BY a.last_seen DESC LIMIT 300""", (mine,)).fetchall()
+    projects = [dict(slug=p["slug"], name=p["name"], releases=p["releases"],
+                     mine=ids.get(p["slug"]) in mine,
+                     licenses=p["licenses"] if ids.get(p["slug"]) in mine else None,
+                     devices=p["devices"] if ids.get(p["slug"]) in mine else None)
+                for p in data["projects"]]
+    totals = dict(projects=len(projects), releases=sum(p["releases"] for p in projects),
+                  mine=sum(1 for p in projects if p["mine"]),
+                  devices=sum(p["devices"] or 0 for p in projects))
+    return render_template("team_dashboard.html", staff=g.staff, projects=projects,
+                           totals=totals, recent_rel=data["recent_rel"],
+                           devices=[dict(app=r[0], slug=r[1], name=r[2], device=r[3][:14], seen=r[4])
+                                    for r in dev_rows])
+
+
 @app.get("/team/<slug>")
 @staff_only
 def team_project(slug):

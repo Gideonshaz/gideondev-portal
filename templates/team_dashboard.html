@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · GideonDev{% endblock %}
+{% block body %}
+<h1>Dashboard</h1>
+<p class="sub">Read-only overview &middot; signed in as {{ staff.username }}</p>
+
+<div class="stats">
+  <div class="stat"><b>{{ totals.projects }}</b><span>Apps</span></div>
+  <div class="stat"><b>{{ totals.releases }}</b><span>Releases</span></div>
+  <div class="stat"><b>{{ totals.mine }}</b><span>Your apps</span></div>
+  <div class="stat"><b>{{ totals.devices }}</b><span>Your devices</span></div>
+</div>
+
+<section class="card">
+  <h2>All apps</h2>
+  <table class="stack">
+    <thead><tr><th>App</th><th>Releases</th><th>Keys</th><th>Devices</th></tr></thead>
+    {% for p in projects %}
+    <tr>
+      <td data-label="App">{% if p.mine %}<a href="{{ url_for('team_project', slug=p.slug) }}"><b>{{ p.name }}</b></a>{% else %}<b>{{ p.name }}</b>{% endif %}</td>
+      <td data-label="Releases">{{ p.releases }}</td>
+      <td data-label="Keys">{% if p.mine %}{{ p.licenses }}{% else %}<span class="muted">&ndash;</span>{% endif %}</td>
+      <td data-label="Devices">{% if p.mine %}{{ p.devices }}{% else %}<span class="muted">&ndash;</span>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="4" class="muted">No apps yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card">
+  <h2>Recent releases</h2>
+  <table class="stack">
+    <thead><tr><th>App</th><th>Version</th><th>Date</th></tr></thead>
+    {% for r in recent_rel %}
+    <tr>
+      <td data-label="App">{{ r[0] }}</td>
+      <td data-label="Version"><span class="tag good">v{{ r[1] }}</span> <span class="tag">{{ r[2] }}</span></td>
+      <td data-label="Date">{{ r[3].strftime("%d %b %Y") }}</td>
+    </tr>
+    {% else %}<tr><td colspan="3" class="muted">No releases yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section class="card" id="devices">
+  <h2>Your devices ({{ devices|length }})</h2>
+  <table class="stack">
+    <thead><tr><th>App</th><th>Key name</th><th>Device</th><th>Last seen</th></tr></thead>
+    {% for d in devices %}
+    <tr>
+      <td data-label="App">{{ d.app }}</td>
+      <td data-label="Key name">{{ d.name or "unnamed key" }}</td>
+      <td data-label="Device"><code>{{ d.device }}</code></td>
+      <td data-label="Last seen">{{ d.seen.strftime("%d %b %Y %H:%M") }}</td>
+    </tr>
+    {% else %}<tr><td colspan="4" class="muted">No devices have activated yet.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

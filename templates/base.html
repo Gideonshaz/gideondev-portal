@@ -38,6 +38,12 @@
     </form>
     {% endif %}
   </div>
+  {% if session.get('staff_id') and not session.get('admin') %}
+  <nav class="staffnav" aria-label="Team">
+    <a class="{{ 'on' if request.endpoint in ('team_home', 'team_project') }}" href="{{ url_for('team_home') }}">License keys</a>
+    <a class="{{ 'on' if request.endpoint == 'team_dashboard' }}" href="{{ url_for('team_dashboard') }}">Dashboard</a>
+  </nav>
+  {% endif %}
   <main>
     {% with messages = get_flashed_messages() %}
       {% for m in messages %}<p class="flash">{{ m }}</p>{% endfor %}

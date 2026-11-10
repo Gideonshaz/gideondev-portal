@@ -327,3 +327,8 @@ table.recent tbody tr:nth-child(n+4) { display: none; }
 
   .viewswitch { margin: 16px 0 0; font-size: 13px; }
 }
+
+/* team members: two-tab switcher */
+.staffnav{display:flex;gap:6px;max-width:960px;margin:10px auto 0;padding:0 16px}
+.staffnav a{flex:1;text-align:center;padding:9px 12px;border-radius:10px;background:#161D27;border:1px solid #293544;color:#94A3B8;text-decoration:none;font-weight:600;font-size:.92rem}
+.staffnav a.on{background:#3B82F6;border-color:#3B82F6;color:#fff}
