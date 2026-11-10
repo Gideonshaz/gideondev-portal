@@ -179,7 +179,7 @@
             <button class="ghost">Save</button>
           </form>
         </td>
-        <td class="clip" data-label="Key">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">unreadable (stored with a different encryption secret)</span>{% endif %}</td>
+        <td class="clip" data-label="Key">{% if l.key %}<code>{{ l.key }}</code>{% else %}<span class="muted">can't display this key</span>{% endif %}</td>
         <td data-label="Term">{{ l.duration }}</td>
         <td data-label="Status">
           {% if l.status == "revoked" %}<span class="tag bad">revoked</span>

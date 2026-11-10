@@ -215,7 +215,7 @@ def test_keys_from_another_secret_do_not_crash_the_page(admin):
                         VALUES (%s, 'not-a-valid-token', 'GatePassKiosk', 12, '1 year', %s)""",
                      ("f" * 64, pid))
     page = admin.get("/projects/gatepasskiosk")
-    assert page.status_code == 200 and b"unreadable" in page.data
+    assert page.status_code == 200 and "can't display this key" in page.get_data(as_text=True)
 
 
 # ------------------------------------------------------- old server running alongside / after
