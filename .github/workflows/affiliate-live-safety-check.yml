@@ -1,0 +1,24 @@
+name: Affiliate LIVE scheduler safety check
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+permissions:
+  contents: read
+jobs:
+  safety-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      ADVERTISER_ID: '7657848009081946119'
+      APPROVED_AFFILIATE_IDS: '1881634554090609'
+      PROTECTED_IDS: '1869666392557778,1869665454413026,1869665286717649'
+    steps:
+      - name: Fail closed until independent TikTok Ads authorization is configured
+        run: |
+          echo "SAFE MODE: no campaign operations are enabled."
+          echo "GitHub scheduled workflows may run late. Never assume exact-minute execution."
+          echo "Advertiser: $ADVERTISER_ID"
+          echo "Approved affiliate IDs: $APPROVED_AFFILIATE_IDS"
+          echo "Protected campaign IDs: $PROTECTED_IDS"
+          echo "No TikTok credentials, API requests, or campaign mutations occur in this workflow."
