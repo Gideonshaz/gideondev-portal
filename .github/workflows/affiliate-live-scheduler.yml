@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  # Supervised testing before merge: each push to the feature branch runs ONE pass.
+  # Still dry run unless BOTH the portal switch and SCHEDULER_LIVE_ARMED=true are on.
+  push:
+    branches: [feature/affiliate-live-scheduler-safe]
 permissions:
   contents: read
 concurrency:
