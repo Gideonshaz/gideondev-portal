@@ -288,6 +288,23 @@ def api_status():
                    tiktok=auth, last_runner_activity=iso(last))
 
 
+@bp.post("/api/scheduler/v1/live")
+@device_api
+def api_live():
+    """App switch for the portal's live mode. Turning LIVE on needs the typed confirmation;
+    going back to dry run never does. The GitHub variable SCHEDULER_LIVE_ARMED stays the
+    master switch: with it off, nothing is switched whatever this says."""
+    b = request.get_json(silent=True) or {}
+    want = b.get("live")
+    if not isinstance(want, bool):
+        return err("INVALID", "live must be true or false", 400)
+    if want and b.get("confirm") != "ENABLE LIVE":
+        return err("CONFIRM_REQUIRED", "Type ENABLE LIVE to arm real campaign changes", 400)
+    with db() as conn:
+        conn.execute("UPDATE sched_settings SET live_enabled=%s, updated_at=now() WHERE id=1", (want,))
+    return jsonify(live_enabled=want, mode="LIVE" if want else "DRY_RUN")
+
+
 @bp.get("/api/scheduler/v1/campaigns")
 @device_api
 def api_campaigns():

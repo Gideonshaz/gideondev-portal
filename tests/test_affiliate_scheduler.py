@@ -168,6 +168,18 @@ def test_api_crud(env, device):
     assert bad.status_code == 400 and "protected" in bad.json["message"]
 
 
+def test_api_live_switch(env, device):
+    assert env.post("/api/scheduler/v1/live", json={"live": True}).status_code == 401
+    r = env.post("/api/scheduler/v1/live", json={"live": True}, headers=device)
+    assert r.status_code == 400 and r.json["error"] == "CONFIRM_REQUIRED"
+    r = env.post("/api/scheduler/v1/live", json={"live": True, "confirm": "ENABLE LIVE"}, headers=device)
+    assert r.json["live_enabled"] is True
+    assert env.get("/api/scheduler/v1/status", headers=device).json["mode"] == "LIVE"
+    r = env.post("/api/scheduler/v1/live", json={"live": False}, headers=device)   # no confirm needed
+    assert r.json["live_enabled"] is False
+    assert env.post("/api/scheduler/v1/live", json={"live": "yes"}, headers=device).status_code == 400
+
+
 def test_api_status_and_campaigns(env, device):
     st = env.get("/api/scheduler/v1/status", headers=device).json
     assert st["live_enabled"] is False and st["mode"] == "DRY_RUN" and st["tiktok"]["state"] == "NOT_CONNECTED"
