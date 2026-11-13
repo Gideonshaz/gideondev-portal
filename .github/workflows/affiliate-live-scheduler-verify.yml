@@ -3,6 +3,10 @@ name: Affiliate LIVE Scheduler - Verify
 # then (if the portal is connected) reads campaign tashafrh. Never changes a campaign.
 on:
   workflow_dispatch:
+  # Lets the read-only check run from the feature branch before anything is merged to
+  # main (manual dispatch only appears once the file is on the default branch).
+  push:
+    branches: [feature/affiliate-live-scheduler-safe]
 permissions:
   contents: read
 concurrency:
