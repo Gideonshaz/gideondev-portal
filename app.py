@@ -1263,5 +1263,10 @@ def license_reset(license_id):
         "UPDATE licenses SET device_id=NULL WHERE id=%s"])
 
 
+# Affiliate LIVE GMV Max scheduler: separate module, own tables and URLs.
+from affiliate_scheduler import portal as affiliate_scheduler_portal  # noqa: E402
+affiliate_scheduler_portal.init_app(app, db, fernet, csrf)
+
+
 if __name__ == "__main__":
     app.run()

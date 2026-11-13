@@ -8,6 +8,7 @@ import psycopg
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 import app as portal
+from migrations import MIGRATIONS
 from conftest import DEVICE_A, DEVICE_B, DEVICE_C, legacy_schema, make_key, post
 
 DB = os.environ["DATABASE_URL"]
@@ -46,7 +47,7 @@ def test_migration_is_idempotent(client):
     portal.app.config["SCHEMA_READY"] = False
     assert client.get("/login").status_code == 200
     with psycopg.connect(DB) as conn:
-        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 7
+        assert conn.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == len(MIGRATIONS)
 
 
 # ------------------------------------------------------------------ licensing

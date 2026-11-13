@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}TikTok · GideonDev Portal{% endblock %}
+{% block body %}
+<h1>Almost done</h1>
+<section class="card">
+  {% if error %}
+    <p class="flash">TikTok did not authorize ({{ error }}). Go back to the scheduler page and try Connect TikTok again.</p>
+    <p><a class="btn" href="{{ url_for('scheduler.page') }}">Back</a></p>
+  {% else %}
+    <p>TikTok sent the authorization back. Tap Finish to save it in your portal.</p>
+    <p><a class="btn" href="{{ href }}">Finish</a></p>
+  {% endif %}
+</section>
+{% endblock %}

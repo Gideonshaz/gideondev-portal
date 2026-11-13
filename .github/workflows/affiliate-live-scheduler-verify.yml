@@ -1,0 +1,26 @@
+name: Affiliate LIVE Scheduler - Verify
+# Manual, read-only. Checks the TikTok MCP endpoint + OAuth metadata from GitHub's network,
+# then (if the portal is connected) reads campaign tashafrh. Never changes a campaign.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: affiliate-live-scheduler   # shares the lock with the scheduler run
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Campaign safety tests
+        run: python -m unittest discover -s tests -p 'test_affiliate_safety.py'
+      - name: Verify MCP endpoint, OAuth metadata and read access (read only)
+        env:
+          PORTAL_URL: ${{ secrets.SCHEDULER_PORTAL_URL }}
+          SCHEDULER_RUNNER_TOKEN: ${{ secrets.SCHEDULER_RUNNER_TOKEN }}
+        run: python -m affiliate_scheduler.verify

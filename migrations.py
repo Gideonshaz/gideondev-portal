@@ -159,4 +159,103 @@ MIGRATIONS = [
         );
         ALTER TABLE licenses ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '';
     """),
+    # Affiliate LIVE GMV Max scheduler. New tables only; nothing above is touched.
+    # The CHECK pins the only approved campaign at the database level, so a bug or a
+    # tampered client still cannot store a schedule for any other campaign.
+    ("008_affiliate_scheduler", """
+        CREATE TABLE IF NOT EXISTS sched_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            live_enabled BOOLEAN NOT NULL DEFAULT false,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        INSERT INTO sched_settings (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+        CREATE TABLE IF NOT EXISTS sched_schedules (
+            id SERIAL PRIMARY KEY,
+            advertiser_id TEXT NOT NULL,
+            campaign_id TEXT NOT NULL,
+            campaign_name TEXT NOT NULL,
+            schedule_type TEXT NOT NULL CHECK (schedule_type IN ('once', 'weekly')),
+            live_date DATE,
+            weekdays SMALLINT[] NOT NULL DEFAULT '{}',
+            live_start TIME NOT NULL,
+            live_end TIME NOT NULL,
+            lead_minutes INTEGER NOT NULL DEFAULT 10 CHECK (lead_minutes BETWEEN 0 AND 120),
+            timezone TEXT NOT NULL DEFAULT 'Asia/Kuala_Lumpur' CHECK (timezone = 'Asia/Kuala_Lumpur'),
+            active BOOLEAN NOT NULL DEFAULT true,
+            label TEXT NOT NULL DEFAULT '',
+            last_execution_at TIMESTAMPTZ,
+            last_result TEXT NOT NULL DEFAULT '',
+            effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            deleted_at TIMESTAMPTZ,
+            CONSTRAINT sched_only_approved CHECK (
+                advertiser_id = '7657848009081946119'
+                AND campaign_id = '1881634554090609' AND campaign_name = 'tashafrh'),
+            CONSTRAINT sched_shape CHECK (
+                (schedule_type = 'once' AND live_date IS NOT NULL)
+                OR (schedule_type = 'weekly' AND cardinality(weekdays) > 0)),
+            CONSTRAINT sched_not_zero_length CHECK (live_start <> live_end)
+        );
+
+        CREATE TABLE IF NOT EXISTS sched_executions (
+            id SERIAL PRIMARY KEY,
+            operation_id TEXT NOT NULL UNIQUE,
+            schedule_id INTEGER NOT NULL REFERENCES sched_schedules(id),
+            campaign_id TEXT NOT NULL,
+            operation TEXT NOT NULL CHECK (operation IN ('ENABLE', 'DISABLE')),
+            due_at TIMESTAMPTZ NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('claimed', 'succeeded', 'dry_run', 'failed',
+                                                   'rejected', 'missed', 'skipped_overlap')),
+            mode TEXT NOT NULL DEFAULT '',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            claim_token TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '',
+            run_id TEXT NOT NULL DEFAULT '',
+            claimed_at TIMESTAMPTZ,
+            finished_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS sched_exec_schedule ON sched_executions (schedule_id, id DESC);
+
+        CREATE TABLE IF NOT EXISTS sched_devices (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            token_hash CHAR(64) NOT NULL UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_seen TIMESTAMPTZ,
+            revoked_at TIMESTAMPTZ
+        );
+
+        CREATE TABLE IF NOT EXISTS sched_tiktok_auth (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            mcp_url TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            client_secret_enc TEXT NOT NULL DEFAULT '',
+            token_endpoint TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            access_token_enc TEXT NOT NULL,
+            access_expires_at TIMESTAMPTZ,
+            refresh_token_enc TEXT NOT NULL DEFAULT '',
+            authorized_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_refresh_at TIMESTAMPTZ,
+            needs_reauth BOOLEAN NOT NULL DEFAULT false,
+            last_error TEXT NOT NULL DEFAULT '',
+            verified_at TIMESTAMPTZ,
+            verify_result TEXT NOT NULL DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS sched_oauth_pending (
+            state CHAR(43) PRIMARY KEY,
+            verifier_enc TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            client_secret_enc TEXT NOT NULL DEFAULT '',
+            redirect_uri TEXT NOT NULL,
+            token_endpoint TEXT NOT NULL,
+            resource TEXT NOT NULL,
+            mcp_url TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+    """),
 ]

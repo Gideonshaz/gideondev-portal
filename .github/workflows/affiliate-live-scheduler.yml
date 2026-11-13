@@ -1,20 +1,29 @@
-name: Affiliate LIVE Scheduler - Safe Dry Run
+name: Affiliate LIVE Scheduler
+# Best effort: GitHub may start scheduled runs late (often 5-15 min) or skip them under load.
+# Scheduled runs only fire from the default branch.
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: affiliate-live-scheduler
+  cancel-in-progress: false   # never kill a run mid-operation; the next one waits
 jobs:
-  scheduler-safety-check:
+  scheduler:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Run dry-run worker (never writes campaign status)
-        run: python -m affiliate_scheduler.runner
-      - name: Run campaign safety tests
+      - name: Campaign safety tests (must pass before anything runs)
         run: python -m unittest discover -s tests -p 'test_affiliate_safety.py'
+      - name: Run scheduler (dry run unless armed in BOTH portal and repo variable)
+        env:
+          PORTAL_URL: ${{ secrets.SCHEDULER_PORTAL_URL }}
+          SCHEDULER_RUNNER_TOKEN: ${{ secrets.SCHEDULER_RUNNER_TOKEN }}
+          SCHEDULER_LIVE_ARMED: ${{ vars.SCHEDULER_LIVE_ARMED }}
+        run: python -m affiliate_scheduler.runner

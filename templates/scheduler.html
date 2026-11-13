@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}LIVE scheduler · GideonDev Portal{% endblock %}
+{% block body %}
+<h1>Affiliate LIVE scheduler</h1>
+<p class="sub">Turns approved LIVE GMV Max campaigns on before a LIVE and off after it. Malaysia time. GitHub Actions checks about every 5 minutes and can run late, so times are not exact to the minute.</p>
+
+{% if authorize_url %}
+<section class="card">
+  <h2>Step 2 of 3: authorize on TikTok</h2>
+  <p>Open the link, sign in with the TikTok for Business account that owns advertiser <b>{{ advertiser }}</b>, and click <b>Authorize</b>. TikTok sends you back to the portal and you tap <b>Finish</b>. The link works for 15 minutes.</p>
+  <p><a class="btn" href="{{ authorize_url }}" rel="noopener noreferrer">Authorize on TikTok</a></p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>TikTok Ads connection
+    {% if auth.state == "CONNECTED" %}<span class="tag good">connected</span>
+    {% elif auth.state == "EXPIRING_SOON" %}<span class="tag bad">renew soon</span>
+    {% elif auth.state == "NEEDS_REAUTH" %}<span class="tag bad">authorize again</span>
+    {% else %}<span class="tag">not connected</span>{% endif %}</h2>
+  <p class="muted">Official TikTok for Business MCP server: {{ mcp_url }}</p>
+  {% if auth.authorized_at %}
+    <p>Authorized {{ auth.authorized_at }}. TikTok ends the sign-in after 30 days: renew by <b>{{ auth.reauthorize_by }}</b>.</p>
+    {% if auth.last_error %}<p class="flash">{{ auth.last_error }}</p>{% endif %}
+    {% if auth.verify_result %}<p>Last check ({{ auth.verified_at }}): {{ auth.verify_result }}</p>{% endif %}
+  {% endif %}
+  <form method="post" action="{{ url_for('scheduler.tiktok_connect') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button{% if auth.state == "CONNECTED" %} class="ghost"{% endif %}>{{ "Reconnect TikTok" if auth.authorized_at else "Connect TikTok" }}</button>
+  </form>
+  {% if auth.authorized_at %}
+  <p class="muted">To check read access: GitHub → Actions → <b>Affiliate LIVE Scheduler - Verify</b> → Run workflow. It only reads campaign {{ approved|list|first }} and never changes a campaign; the result appears above.</p>
+  {% endif %}
+  {% if not runner_ready %}<p class="flash">SCHEDULER_RUNNER_TOKEN is not set on this server, so GitHub Actions cannot fetch schedules yet.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Mode {% if live %}<span class="tag bad">LIVE: real changes</span>{% else %}<span class="tag good">dry run</span>{% endif %}</h2>
+  <p>Real campaign changes need two switches: this one, and the GitHub repository variable <b>SCHEDULER_LIVE_ARMED=true</b>. With either off, every run only verifies the campaign and logs what it would do.</p>
+  <form method="post" action="{{ url_for('scheduler.set_live') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if live %}
+      <input type="hidden" name="live" value="off"><button>Back to dry run</button>
+    {% else %}
+      <input type="hidden" name="live" value="on">
+      <label>Type ENABLE LIVE to arm <input name="confirm" autocomplete="off"></label>
+      <button class="danger">Arm real changes</button>
+    {% endif %}
+  </form>
+</section>
+
+<section class="card">
+  <h2>Android app access</h2>
+  {% if new_device_token %}
+    <p class="flash">Token for <b>{{ new_device_name }}</b>. It is shown once only. Enter it in the app's Settings now.</p>
+    <p><code>{{ new_device_token }}</code></p>
+  {% endif %}
+  <ul class="assets">
+  {% for d in devices %}
+    <li><span>{{ d[1] }}{% if d[4] %} (revoked){% elif d[3] %} · last seen {{ d[3].strftime('%Y-%m-%d %H:%M') }} UTC{% endif %}</span>
+    {% if not d[4] %}<form method="post" action="{{ url_for('scheduler.device_revoke', did=d[0]) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="ghost">Revoke</button></form>{% endif %}</li>
+  {% else %}<li class="muted">No devices yet.</li>{% endfor %}
+  </ul>
+  <form method="post" action="{{ url_for('scheduler.device_create') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input name="name" placeholder="Device name" value="Gideon's phone" maxlength="60">
+    <button class="ghost">Create app token</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Schedules</h2>
+  <ul class="assets">
+  {% for s in scheds %}
+    <li><span><b>{{ s.campaign_name }}</b> · {{ s.live_date if s.schedule_type == "once" else "weekly " ~ s.weekdays|join(",") }} · {{ s.live_start }}–{{ s.live_end }} MYT · on {{ s.lead_minutes }} min early · {{ "active" if s.active else "paused" }}{% if s.last_result %} · last: {{ s.last_result }}{% endif %}</span></li>
+  {% else %}<li class="muted">No schedules. Create them in the Android app.</li>{% endfor %}
+  </ul>
+</section>
+
+<section class="card">
+  <h2>Recent executions</h2>
+  <ul class="assets">
+  {% for e in execs %}
+    <li><span>{{ e.due_at }} · {{ e.operation }} · <b>{{ e.status }}</b>{% if e.mode %} ({{ e.mode }}){% endif %}{% if e.attempts > 1 %} · attempt {{ e.attempts }}{% endif %} · {{ e.message }}</span></li>
+  {% else %}<li class="muted">Nothing has run yet.</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}
