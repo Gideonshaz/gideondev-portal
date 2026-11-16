@@ -53,20 +53,38 @@ def main():
             required=schema.get("required"), properties=shape(schema.get("properties") or {}))
 
     campaign_id = os.environ.get("PROBE_CAMPAIGN_ID", "1881634554090609")
-    today = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-    day = today.strftime("%Y-%m-%d")
-    attempts = {
-        "gmv_max_report_get": {"advertiser_id": ADVERTISER_ID, "store_ids": [], "start_date": day, "end_date": day,
-                               "dimensions": ["campaign_id"], "metrics": ["cost", "gross_revenue", "roi", "orders"],
-                               "filtering": {"campaign_ids": [campaign_id]}},
-    }
-    for n, args in attempts.items():
-        if n in tools and is_read_only(n):
-            try:
-                res = session.call_tool(n, args)
-                log(step="try", tool=n, ok=True, result=shape(mcp_client.tool_payload(res)))
-            except mcp_client.McpError as e:
-                log(step="try", tool=n, ok=False, error=str(e)[:600])
+    for n in ("gmv_max_report_get", "identity_live_get", "campaign_gmv_max_info_get"):
+        if n in tools:
+            sch = tools[n].get("inputSchema") or {}
+            print(json.dumps({"step": "full_schema", "tool": n, "description": tools[n].get("description"),
+                              "schema": sch}, default=str)[:20000], flush=True)
+
+    def call(n, args):
+        if n not in tools or not is_read_only(n):
+            log(step="try", tool=n, ok=False, error="not offered or not read-only"); return None
+        try:
+            payload = mcp_client.tool_payload(session.call_tool(n, args))
+            print(json.dumps({"step": "try", "tool": n, "ok": True, "result": payload}, default=str)[:12000], flush=True)
+            return payload
+        except mcp_client.McpError as e:
+            log(step="try", tool=n, ok=False, error=str(e)[:800]); return None
+
+    info = call("campaign_gmv_max_info_get", {"advertiser_id": ADVERTISER_ID, "campaign_id": campaign_id}) or {}
+    flat = json.dumps(info)
+    import re
+    store = (re.findall(r'"store_id": "?(\d+)', flat) or [None])[0]
+    ident = re.findall(r'"identity_id": "?([\w-]+)', flat)
+    itype = re.findall(r'"identity_type": "?(\w+)', flat)
+    log(step="found", store_id=store, identity_ids=ident[:5], identity_types=itype[:5])
+    today = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).strftime("%Y-%m-%d")
+    if store:
+        call("gmv_max_report_get", {"advertiser_id": ADVERTISER_ID, "store_ids": [store], "start_date": today,
+                                    "end_date": today, "dimensions": ["campaign_id"],
+                                    "metrics": ["cost", "gross_revenue", "roi", "orders"],
+                                    "filtering": {"campaign_ids": [campaign_id]}})
+    if ident:
+        call("identity_live_get", {"advertiser_id": ADVERTISER_ID, "identity_id": ident[0],
+                                   "identity_type": itype[0] if itype else "TT_USER"})
     return 0
 
 
