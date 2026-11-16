@@ -258,4 +258,14 @@ MIGRATIONS = [
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
     """),
+    # Read-only LIVE stats the scheduler run reports for the app (latest snapshot per campaign).
+    ("009_scheduler_live_stats", """
+        CREATE TABLE IF NOT EXISTS sched_live_stats (
+            campaign_id TEXT PRIMARY KEY,
+            stats JSONB,
+            error TEXT NOT NULL DEFAULT '',
+            fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ok_at TIMESTAMPTZ
+        );
+    """),
 ]

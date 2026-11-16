@@ -357,12 +357,32 @@ def test_live_switch_needs_typed_confirmation(admin):
 
 
 # ------------------------------------------------------------------ fake TikTok MCP
+def _report_reply(args):
+    if args["dimensions"] == ["campaign_id"]:
+        return {"code": 0, "data": {"list": [{"dimensions": {"campaign_id": APPROVED}, "metrics": {
+            "cost": "11.29", "gross_revenue": "168.20", "orders": "10", "roi": "15.00"}}]}}
+    return {"code": 0, "data": {"list": [
+        {"dimensions": {"room_id": "R2"}, "metrics": {"live_status": "ONGOING", "live_launched_time": "2026-11-16 13:19:42",
+                                                     "live_duration": "", "live_views": "1087", "cost": "11.59",
+                                                     "gross_revenue": "168.20", "roi": "14.51", "orders": "10"}},
+        {"dimensions": {"room_id": "R1"}, "metrics": {"live_status": "END", "live_launched_time": "2026-11-12 14:09:35",
+                                                     "live_duration": "2h 2m", "live_views": "0", "cost": "0.00",
+                                                     "gross_revenue": "0.00", "roi": "0.00", "orders": "0"}}]}}
+
+
+STATS_REPLIES = {
+    "campaign_gmv_max_info_get": lambda a: {"code": 0, "data": {"store_id": "S1", "operation_status": "ENABLE",
+                                                                "budget": 100, "roas_bid": 7}},
+    "gmv_max_report_get": _report_reply,
+}
+
+
 class FakeTikTok:
-    def __init__(self, campaign=None, write_schema=True, read_schema=True):
+    def __init__(self, campaign=None, write_schema=True, read_schema=True, stats_tools=False):
         self.campaign = campaign or {"campaign_id": APPROVED, "campaign_name": "tashafrh",
                                      "advertiser_id": ADVERTISER_ID, "operation_status": "DISABLE"}
         self.calls = []
-        self.write_schema, self.read_schema = write_schema, read_schema
+        self.write_schema, self.read_schema, self.stats_tools = write_schema, read_schema, stats_tools
 
     def tools(self):
         read_props = {"advertiser_id": {}, "filtering": {}} if self.read_schema else {"advertiser_id": {}}
@@ -370,6 +390,9 @@ class FakeTikTok:
         if self.write_schema:
             t.append({"name": "campaign_status_update", "inputSchema": {"properties": {
                 "advertiser_id": {}, "campaign_ids": {}, "operation_status": {}}}})
+        if self.stats_tools:
+            t += [{"name": "campaign_gmv_max_info_get", "inputSchema": {"properties": {}}},
+                  {"name": "gmv_max_report_get", "inputSchema": {"properties": {}}}]
         return t
 
     def __call__(self, method, url, data=None, headers=None, form=False):
@@ -387,6 +410,9 @@ class FakeTikTok:
             if name == "campaign_status_update":
                 self.campaign["operation_status"] = args["operation_status"]
                 res = {"content": [{"type": "text", "text": json.dumps({"code": 0})}]}
+            elif name in STATS_REPLIES:
+                payload = STATS_REPLIES[name](args)
+                res = {"content": [{"type": "text", "text": json.dumps(payload)}]}
             else:
                 payload = {"code": 0, "data": {"list": [dict(self.campaign)]}}
                 res = {"content": [{"type": "text", "text": json.dumps(payload)}]}
@@ -548,3 +574,47 @@ def test_authorize_url_has_pkce_and_resource():
     url = mcp_client.authorize_url({"authorization_endpoint": "https://business-api.tiktok.com/portal/mcp-tt4b-authorize",
                                     "resource": MCP, "scopes": ["mcp:tt4b"]}, "cid", "https://p/cb", "st", "ch")
     assert "code_challenge_method=S256" in url and "resource=" in url and "scope=mcp%3Att4b" in url
+
+
+# ------------------------------------------------------------------ LIVE stats (read only)
+def test_runner_reports_live_stats_read_only():
+    tk, p = FakeTikTok(stats_tools=True), FakePortal([], live=True)
+    assert runner.run(p, armed_env=True, run_id="t", http=tk) == 0
+    assert tk.writes() == []
+    assert {c[0] for c in tk.calls} == {"campaign_gmv_max_info_get", "gmv_max_report_get"}
+    st = p.reports[-1]
+    assert st["campaign_id"] == APPROVED and st["error"] == ""
+    s = st["stats"]
+    assert (s["cost"], s["gmv"], s["roi"], s["orders"]) == (11.29, 168.2, 15.0, 10)
+    assert s["is_live"] is True and s["live"]["room_id"] == "R2" and s["live"]["views"] == 1087
+    assert s["live"]["started_at"] == "2026-11-16T21:19:42+08:00"
+
+
+def test_runner_stats_failure_never_breaks_operations():
+    tk, p = FakeTikTok(stats_tools=False), FakePortal([op("ENABLE")], live=True)
+    assert runner.run(p, armed_env=True, run_id="t", http=tk) == 0
+    assert p.reports[0]["status"] == "succeeded"
+    assert p.reports[-1]["stats"] is None and "no longer offers" in p.reports[-1]["error"]
+    tk, p = FakeTikTok(stats_tools=True), FakePortal([], live=False, token_status=503)
+    assert runner.run(p, armed_env=False, run_id="t", http=tk) == 0
+    assert p.reports[-1]["stats"] is None and "REAUTH" in p.reports[-1]["error"] and tk.calls == []
+
+
+def test_stats_endpoints(env, device):
+    h = {"Authorization": f"Bearer {RUNNER_TOKEN}"}
+    assert env.get("/api/scheduler/v1/stats").status_code == 401
+    assert env.post("/api/scheduler/runner/stats", json={"campaign_id": APPROVED, "stats": {}}).status_code == 401
+    assert env.post("/api/scheduler/runner/stats", headers=h,
+                    json={"campaign_id": "1869666392557778", "stats": {}}).status_code == 400
+    empty = env.get("/api/scheduler/v1/stats", headers=device).get_json()["campaigns"][0]
+    assert empty["campaign_id"] == APPROVED and empty["stats"] is None
+    good = {"date": "2026-11-16", "cost": 11.29, "gmv": 168.2, "roi": 15.0, "orders": 10, "is_live": True,
+            "live": {"room_id": "R2", "status": "ONGOING", "views": 1087, "junk": "x"}, "junk": "y"}
+    assert env.post("/api/scheduler/runner/stats", headers=h, json={"campaign_id": APPROVED, "stats": good}).status_code == 200
+    c = env.get("/api/scheduler/v1/stats", headers=device).get_json()["campaigns"][0]
+    assert c["stats"]["gmv"] == 168.2 and c["stats"]["is_live"] is True and "junk" not in c["stats"]
+    assert "junk" not in c["stats"]["live"] and c["error"] == "" and c["updated_at"]
+    # a failed read keeps the last good figures and shows the problem
+    env.post("/api/scheduler/runner/stats", headers=h, json={"campaign_id": APPROVED, "stats": None, "error": "boom"})
+    c = env.get("/api/scheduler/v1/stats", headers=device).get_json()["campaigns"][0]
+    assert c["stats"]["gmv"] == 168.2 and c["error"] == "boom"

@@ -15,7 +15,7 @@ import os
 import sys
 import urllib.parse
 
-from affiliate_scheduler import mcp_client, tiktok_ops
+from affiliate_scheduler import live_stats, mcp_client, tiktok_ops
 from affiliate_scheduler.safety import ADVERTISER_ID, APPROVED_AFFILIATES, PROTECTED_IDS
 
 
@@ -62,9 +62,6 @@ def run(portal, armed_env, run_id, http=mcp_client._http):
     live = bool(claim.get("live_enabled")) and armed_env
     mode = "LIVE" if live else "DRY_RUN"
     log(event="claimed", count=len(ops), mode=mode, portal_live=claim.get("live_enabled"), armed_env=armed_env)
-    if not ops:
-        return 0
-
     session = tools = None
     auth_problem = None
     status, tok = portal.post("/api/scheduler/runner/tiktok-token", {})
@@ -79,7 +76,8 @@ def run(portal, armed_env, run_id, http=mcp_client._http):
             try:
                 session = mcp_client.McpSession(tok["mcp_url"], token, http=http)
                 session.initialize()
-                tools = session.list_tools(wanted=[tiktok_ops.READ_TOOL, tiktok_ops.WRITE_TOOL])
+                tools = session.list_tools(
+                    wanted=[tiktok_ops.READ_TOOL, tiktok_ops.WRITE_TOOL] + list(live_stats.TOOLS))
             except mcp_client.McpError as e:
                 auth_problem = f"MCP connection failed: {e}"
     else:
@@ -110,7 +108,25 @@ def run(portal, armed_env, run_id, http=mcp_client._http):
             result=result, message=message, attempt=op.get("attempt"), report_status=rs)
         if rs != 200:
             broken = 1
+    report_stats(portal, session, tools, auth_problem)
     return broken
+
+
+def report_stats(portal, session, tools, auth_problem):
+    """Read-only LIVE stats for the app, after any ON/OFF work. Never raises."""
+    for cid in APPROVED_AFFILIATES:
+        try:
+            if auth_problem or session is None:
+                raise mcp_client.McpError(auth_problem or "no TikTok session")
+            missing = [t for t in live_stats.TOOLS if t not in (tools or {})]
+            if missing:
+                raise mcp_client.McpError(f"TikTok MCP no longer offers {missing}")
+            stats, error = live_stats.collect(session, cid), ""
+        except Exception as e:          # stats must never break the scheduler
+            stats, error = None, str(e)[:300]
+        rs, _ = portal.post("/api/scheduler/runner/stats", {"campaign_id": cid, "stats": stats, "error": error})
+        log(event="stats", campaign_id=cid, ok=stats is not None, error=error,
+            is_live=(stats or {}).get("is_live"), report_status=rs)
 
 
 def main():

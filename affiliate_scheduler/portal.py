@@ -7,6 +7,7 @@ it only runs the OAuth hand-off and stores/refreshes tokens. All MCP calls, incl
 read-only verification, happen in GitHub Actions.
 """
 import hashlib
+import json
 import hmac
 import os
 import secrets
@@ -513,6 +514,64 @@ def runner_report():
         conn.execute("UPDATE sched_schedules SET last_execution_at=now(), last_result=%s WHERE id=%s",
                      (f"{row[1]} {status}: {message}"[:300], row[0]))
     return jsonify(ok=True)
+
+
+STAT_KEYS = ("date", "campaign_status", "budget", "roas_bid", "cost", "gmv", "roi", "orders", "is_live")
+LIVE_KEYS = ("room_id", "status", "started_at", "duration", "views", "cost", "gmv", "roi", "orders")
+
+
+def _clean_stats(s):
+    if not isinstance(s, dict):
+        return None
+    out = {k: s.get(k) for k in STAT_KEYS if k in s}
+    live = s.get("live")
+    out["live"] = {k: live.get(k) for k in LIVE_KEYS if k in live} if isinstance(live, dict) else None
+    for k, v in list(out.items()):
+        if isinstance(v, str):
+            out[k] = v[:60]
+    return out
+
+
+@bp.post("/api/scheduler/runner/stats")
+@runner_api
+def runner_stats():
+    """Latest read-only LIVE stats from the scheduler run (GitHub). Never changes a schedule."""
+    b = request.get_json(silent=True) or {}
+    cid = str(b.get("campaign_id", ""))
+    if cid not in APPROVED_AFFILIATES:
+        return err("INVALID", "Not an approved campaign", 400)
+    stats = _clean_stats(b.get("stats"))
+    error = str(b.get("error") or "")[:300]
+    with db() as conn:
+        if stats is not None:
+            conn.execute("""INSERT INTO sched_live_stats (campaign_id, stats, error, fetched_at, ok_at)
+                            VALUES (%s, %s, '', now(), now())
+                            ON CONFLICT (campaign_id) DO UPDATE SET stats=EXCLUDED.stats, error='',
+                              fetched_at=now(), ok_at=now()""", (cid, json.dumps(stats)))
+        else:
+            conn.execute("""INSERT INTO sched_live_stats (campaign_id, error, fetched_at) VALUES (%s, %s, now())
+                            ON CONFLICT (campaign_id) DO UPDATE SET error=EXCLUDED.error, fetched_at=now()""",
+                         (cid, error or "No stats"))
+    return jsonify(ok=True)
+
+
+@bp.get("/api/scheduler/v1/stats")
+@device_api
+def api_stats():
+    """Latest LIVE stats for the app. Keeps the last good figures when a read fails."""
+    with db() as conn:
+        rows = conn.execute("SELECT campaign_id, stats, error, fetched_at, ok_at FROM sched_live_stats").fetchall()
+    found = {r[0]: r for r in rows}
+    out = []
+    for cid, name in APPROVED_AFFILIATES.items():
+        r = found.get(cid)
+        stats = r[1] if r else None
+        if isinstance(stats, str):
+            stats = json.loads(stats)
+        out.append({"campaign_id": cid, "campaign_name": name, "stats": stats,
+                    "error": r[2] if r else "", "fetched_at": iso(r[3]) if r else None,
+                    "updated_at": iso(r[4]) if r else None})
+    return jsonify(server_time=iso(now_utc()), campaigns=out)
 
 
 @bp.post("/api/scheduler/runner/tiktok-token")
