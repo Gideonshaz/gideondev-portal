@@ -82,9 +82,17 @@ def main():
                                     "end_date": today, "dimensions": ["campaign_id"],
                                     "metrics": ["cost", "gross_revenue", "roi", "orders"],
                                     "filtering": {"campaign_ids": [campaign_id]}})
+    if store:
+        call("gmv_max_report_get", {"advertiser_id": ADVERTISER_ID, "store_ids": [store], "start_date": today,
+                                    "end_date": today, "dimensions": ["room_id"],
+                                    "metrics": ["live_name", "live_status", "live_launched_time", "live_duration",
+                                                "live_views", "cost", "gross_revenue", "roi", "orders"],
+                                    "filtering": {"campaign_ids": [campaign_id]}})
+    bc = (re.findall(r'"identity_authorized_bc_id": "?(\d+)', flat) or [None])[0]
     if ident:
-        call("identity_live_get", {"advertiser_id": ADVERTISER_ID, "identity_id": ident[0],
-                                   "identity_type": itype[0] if itype else "TT_USER"})
+        call("identity_live_get", {"advertiser_id": ADVERTISER_ID, "identity_id": ident[0], "cursor": 0,
+                                   "identity_type": itype[0] if itype else "TT_USER",
+                                   "identity_authorized_bc_id": bc})
     return 0
 
 
