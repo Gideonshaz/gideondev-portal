@@ -1,0 +1,24 @@
+name: Affiliate LIVE Stats - Probe
+# Manual, read-only discovery for the LIVE stats feature. Lists TikTok MCP report/live tools
+# and tries one read for tashafrh. Never changes a campaign.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: affiliate-live-scheduler   # shares the lock with the scheduler run
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: List report/live tools and try one read (read only)
+        env:
+          PORTAL_URL: ${{ secrets.SCHEDULER_PORTAL_URL }}
+          SCHEDULER_RUNNER_TOKEN: ${{ secrets.SCHEDULER_RUNNER_TOKEN }}
+        run: python -m affiliate_scheduler.probe_stats
