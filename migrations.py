@@ -268,4 +268,12 @@ MIGRATIONS = [
             ok_at TIMESTAMPTZ
         );
     """),
+    # Second approved affiliate: nazifaiskandar. DB lock widened to exactly these two.
+    ("010_approve_nazifaiskandar", """
+        ALTER TABLE sched_schedules DROP CONSTRAINT IF EXISTS sched_only_approved;
+        ALTER TABLE sched_schedules ADD CONSTRAINT sched_only_approved CHECK (
+            advertiser_id = '7657848009081946119'
+            AND ((campaign_id = '1881634554090609' AND campaign_name = 'tashafrh')
+              OR (campaign_id = '1882182698757202' AND campaign_name = 'nazifaiskandar')));
+    """),
 ]

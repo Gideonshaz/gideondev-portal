@@ -11,7 +11,10 @@ PROTECTED_IDS = frozenset({
     "1869665454413026",  # ViVid HAIR MY
     "1869665286717649",  # ViVid HAIR
 })
-APPROVED_AFFILIATES = {"1881634554090609": "tashafrh"}
+APPROVED_AFFILIATES = {
+    "1881634554090609": "tashafrh",
+    "1882182698757202": "nazifaiskandar",
+}
 
 @dataclass(frozen=True)
 class Campaign:
