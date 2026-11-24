@@ -10,12 +10,13 @@ Flow per run:
 
 Exit code is 0 unless the run itself broke (so GitHub shows a red run you can see).
 """
+import datetime
 import json
 import os
 import sys
 import urllib.parse
 
-from affiliate_scheduler import live_stats, mcp_client, tiktok_ops
+from affiliate_scheduler import live_history, live_stats, mcp_client, tiktok_ops
 from affiliate_scheduler.safety import ADVERTISER_ID, APPROVED_AFFILIATES, PROTECTED_IDS
 
 
@@ -108,8 +109,38 @@ def run(portal, armed_env, run_id, http=mcp_client._http):
             result=result, message=message, attempt=op.get("attempt"), report_status=rs)
         if rs != 200:
             broken = 1
+    report_history(portal, session, tools, auth_problem)
     report_stats(portal, session, tools, auth_problem)
     return broken
+
+
+def report_history(portal, session, tools, auth_problem, now=None):
+    """Read-only daily history for the app: today and yesterday every run (TikTok adds late
+    orders to yesterday), and every day since the campaign started the first time. Never raises."""
+    if auth_problem or session is None or any(t not in (tools or {}) for t in live_stats.TOOLS):
+        return
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    today = now.astimezone(live_stats.MYT).date()
+    try:
+        status, cov = portal.post("/api/scheduler/runner/history-coverage", {})
+    except Exception as e:
+        status, cov = 0, {"message": str(e)}
+    if status != 200:
+        log(event="history", ok=False, error=f"coverage {status}: {cov.get('message', '')}"[:300])
+        return
+    for cid in APPROVED_AFFILIATES:
+        try:
+            first_run, store = live_history.campaign_info(session, cid)
+            have = (cov.get("campaigns") or {}).get(cid)
+            start = today - datetime.timedelta(days=1)
+            if first_run and (not have or have > first_run.isoformat()):
+                start = min(start, first_run)            # first time: fill every day since it started
+            rows = live_history.collect(session, cid, store, start, today, now)
+            rs, rb = portal.post("/api/scheduler/runner/history", {"campaign_id": cid, "rows": rows})
+            log(event="history", campaign_id=cid, ok=rs == 200, days=len(rows), start=str(start),
+                error="" if rs == 200 else str(rb.get("message", ""))[:200])
+        except Exception as e:          # history must never break the scheduler
+            log(event="history", campaign_id=cid, ok=False, error=str(e)[:300])
 
 
 def report_stats(portal, session, tools, auth_problem):

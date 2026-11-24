@@ -3,6 +3,12 @@ name: Affiliate LIVE Stats - Probe
 # and tries one read for tashafrh. Never changes a campaign.
 on:
   workflow_dispatch:
+    inputs:
+      module:
+        description: 'probe_stats, probe_history or history_dry_run (all read only, nothing saved)'
+        default: probe_stats
+        type: choice
+        options: [probe_stats, probe_history, history_dry_run]
 permissions:
   contents: read
 concurrency:
@@ -21,4 +27,4 @@ jobs:
         env:
           PORTAL_URL: ${{ secrets.SCHEDULER_PORTAL_URL }}
           SCHEDULER_RUNNER_TOKEN: ${{ secrets.SCHEDULER_RUNNER_TOKEN }}
-        run: python -m affiliate_scheduler.probe_stats
+        run: python -m affiliate_scheduler.${{ inputs.module || 'probe_stats' }}
