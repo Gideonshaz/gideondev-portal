@@ -5,10 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       module:
-        description: 'probe_stats or probe_history (both read only)'
+        description: 'probe_stats, probe_history or history_dry_run (all read only, nothing saved)'
         default: probe_stats
         type: choice
-        options: [probe_stats, probe_history]
+        options: [probe_stats, probe_history, history_dry_run]
 permissions:
   contents: read
 concurrency:

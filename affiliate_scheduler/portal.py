@@ -574,6 +574,127 @@ def api_stats():
     return jsonify(server_time=iso(now_utc()), campaigns=out)
 
 
+# ------------------------------------------------------------------ daily history
+HIST_INT = ("orders", "live_minutes", "sessions")
+HIST_OPT = ("live_views", "views_10s", "follows")
+
+
+def _hist_row(r):
+    """One validated day row from the runner, or None."""
+    if not isinstance(r, dict):
+        return None
+    try:
+        day = date.fromisoformat(str(r.get("day", ""))[:10])
+        out = {"day": day, "cost": round(float(r.get("cost") or 0), 2), "gmv": round(float(r.get("gmv") or 0), 2)}
+        for k in HIST_INT:
+            out[k] = max(0, int(r.get(k) or 0))
+        for k in HIST_OPT:
+            out[k] = None if r.get(k) is None else max(0, int(r[k]))
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= out["cost"] < 10_000_000 and 0 <= out["gmv"] < 10_000_000):
+        return None
+    return out
+
+
+@bp.post("/api/scheduler/runner/history-coverage")
+@runner_api
+def runner_history_coverage():
+    """Earliest stored day per campaign, so the runner knows whether to fill in the past."""
+    with db() as conn:
+        rows = conn.execute("SELECT campaign_id, min(day) FROM sched_live_daily GROUP BY campaign_id").fetchall()
+    found = {r[0]: r[1].isoformat() for r in rows}
+    return jsonify(campaigns={cid: found.get(cid) for cid in APPROVED_AFFILIATES})
+
+
+@bp.post("/api/scheduler/runner/history")
+@runner_api
+def runner_history():
+    """Daily figures from the scheduler run (read-only TikTok data). Upserts by campaign + day."""
+    b = request.get_json(silent=True) or {}
+    cid = str(b.get("campaign_id", ""))
+    if cid not in APPROVED_AFFILIATES:
+        return err("INVALID", "Not an approved campaign", 400)
+    raw = b.get("rows")
+    if not isinstance(raw, list) or len(raw) > 400:
+        return err("INVALID", "rows must be a list (max 400)", 400)
+    rows = [x for x in (_hist_row(r) for r in raw) if x]
+    with db() as conn:
+        for r in rows:
+            conn.execute("""INSERT INTO sched_live_daily (campaign_id, day, cost, gmv, orders, live_views, views_10s,
+                                follows, live_minutes, sessions, updated_at)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now())
+                            ON CONFLICT (campaign_id, day) DO UPDATE SET cost=EXCLUDED.cost, gmv=EXCLUDED.gmv,
+                              orders=EXCLUDED.orders,
+                              live_views=COALESCE(EXCLUDED.live_views, sched_live_daily.live_views),
+                              views_10s=COALESCE(EXCLUDED.views_10s, sched_live_daily.views_10s),
+                              follows=COALESCE(EXCLUDED.follows, sched_live_daily.follows),
+                              live_minutes=EXCLUDED.live_minutes, sessions=EXCLUDED.sessions, updated_at=now()""",
+                         (cid, r["day"], r["cost"], r["gmv"], r["orders"], r["live_views"], r["views_10s"],
+                          r["follows"], r["live_minutes"], r["sessions"]))
+    return jsonify(ok=True, saved=len(rows), skipped=len(raw) - len(rows))
+
+
+def _totals(days):
+    t = {"cost": 0.0, "gmv": 0.0, "orders": 0, "live_views": 0, "views_10s": 0, "follows": 0,
+         "live_minutes": 0, "sessions": 0, "days": len(days), "days_live": 0}
+    for d in days:
+        for k in ("cost", "gmv"):
+            t[k] += d[k]
+        for k in ("orders", "live_minutes", "sessions"):
+            t[k] += d[k]
+        for k in HIST_OPT:
+            t[k] += d[k] or 0
+        t["days_live"] += 1 if d["sessions"] or d["cost"] > 0 else 0
+    t["cost"], t["gmv"] = round(t["cost"], 2), round(t["gmv"], 2)
+    t["roi"] = round(t["gmv"] / t["cost"], 2) if t["cost"] else 0
+    t["cost_per_order"] = round(t["cost"] / t["orders"], 2) if t["orders"] else 0
+    t["view_10s_rate"] = round(100 * t["views_10s"] / t["live_views"], 1) if t["live_views"] else 0
+    return t
+
+
+@bp.get("/api/scheduler/v1/history")
+@device_api
+def api_history():
+    """Daily figures for a date range (Malaysia days, inclusive). Default: last 7 days.
+    ?from=YYYY-MM-DD&to=YYYY-MM-DD&campaign_id=... (campaign_id optional)."""
+    today = now_utc().astimezone(timing.MYT).date()
+    try:
+        end = date.fromisoformat(request.args.get("to") or today.isoformat())
+        start = date.fromisoformat(request.args.get("from") or (end - timedelta(days=6)).isoformat())
+    except ValueError:
+        return err("INVALID", "Dates must be YYYY-MM-DD", 400)
+    if start > end or (end - start).days > 366:
+        return err("INVALID", "Range must be 1 to 367 days", 400)
+    want = request.args.get("campaign_id")
+    if want and want not in APPROVED_AFFILIATES:
+        return err("INVALID", "Not an approved campaign", 400)
+    with db() as conn:
+        rows = conn.execute("""SELECT campaign_id, day, cost, gmv, orders, live_views, views_10s, follows,
+                                      live_minutes, sessions, updated_at FROM sched_live_daily
+                               WHERE day BETWEEN %s AND %s ORDER BY day DESC""", (start, end)).fetchall()
+        first = dict(conn.execute("SELECT campaign_id, min(day) FROM sched_live_daily GROUP BY campaign_id").fetchall())
+    out = []
+    for cid, name in APPROVED_AFFILIATES.items():
+        if want and cid != want:
+            continue
+        days = []
+        for r in rows:
+            if r[0] != cid:
+                continue
+            cost, gmv, orders = float(r[2]), float(r[3]), r[4]
+            days.append({"day": r[1].isoformat(), "cost": cost, "gmv": gmv, "orders": orders,
+                         "roi": round(gmv / cost, 2) if cost else 0,
+                         "cost_per_order": round(cost / orders, 2) if orders else 0,
+                         "live_views": r[5], "views_10s": r[6], "follows": r[7],
+                         "view_10s_rate": round(100 * r[6] / r[5], 1) if r[5] and r[6] is not None else None,
+                         "live_minutes": r[8], "sessions": r[9], "updated_at": iso(r[10])})
+        out.append({"campaign_id": cid, "campaign_name": name, "totals": _totals(days), "days": days,
+                    "first_day": first[cid].isoformat() if first.get(cid) else None})
+    return jsonify(server_time=iso(now_utc()), today=today.isoformat(), **{"from": start.isoformat()},
+                   to=end.isoformat(), campaigns=out)
+
+
 @bp.post("/api/scheduler/runner/tiktok-token")
 @runner_api
 def runner_token():

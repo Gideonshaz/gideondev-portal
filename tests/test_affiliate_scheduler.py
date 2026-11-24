@@ -358,6 +358,16 @@ def test_live_switch_needs_typed_confirmation(admin):
 
 # ------------------------------------------------------------------ fake TikTok MCP
 def _report_reply(args):
+    if args["dimensions"] == ["campaign_id", "stat_time_day"]:
+        if "live_views" in args["metrics"]:
+            return {"code": 0, "data": {"list": [{"dimensions": {"campaign_id": APPROVED, "stat_time_day": "2026-11-16 00:00:00"},
+                                                  "metrics": {"live_views": "1087", "10_second_live_views": "250",
+                                                              "live_follows": "4"}}]}}
+        return {"code": 0, "data": {"list": [
+            {"dimensions": {"campaign_id": APPROVED, "stat_time_day": "2026-11-16 00:00:00"},
+             "metrics": {"cost": "11.29", "gross_revenue": "168.20", "orders": "10"}},
+            {"dimensions": {"campaign_id": APPROVED, "stat_time_day": "2026-11-15 00:00:00"},
+             "metrics": {"cost": "20.00", "gross_revenue": "100.00", "orders": "4"}}]}}
     if args["dimensions"] == ["campaign_id"]:
         return {"code": 0, "data": {"list": [{"dimensions": {"campaign_id": APPROVED}, "metrics": {
             "cost": "11.29", "gross_revenue": "168.20", "orders": "10", "roi": "15.00"}}]}}
@@ -372,7 +382,8 @@ def _report_reply(args):
 
 STATS_REPLIES = {
     "campaign_gmv_max_info_get": lambda a: {"code": 0, "data": {"store_id": "S1", "operation_status": "ENABLE",
-                                                                "budget": 100, "roas_bid": 7}},
+                                                                "budget": 100, "roas_bid": 7,
+                                                                "schedule_start_time": "2026-11-12 07:18:25"}},
     "gmv_max_report_get": _report_reply,
 }
 
@@ -426,7 +437,7 @@ class FakeTikTok:
 class FakePortal:
     def __init__(self, ops, live=False, token_status=200):
         self.ops, self.live, self.token_status = ops, live, token_status
-        self.reports = []
+        self.reports, self.history, self.coverage = [], [], {}
 
     def post(self, path, body):
         if path.endswith("/claim"):
@@ -435,6 +446,11 @@ class FakePortal:
             if self.token_status != 200:
                 return self.token_status, {"error": "TIKTOK_REAUTH_REQUIRED", "message": "renew"}
             return 200, {"access_token": "AT", "mcp_url": MCP}
+        if path.endswith("/history-coverage"):
+            return 200, {"campaigns": self.coverage}
+        if path.endswith("/history"):
+            self.history.append(body)
+            return 200, {"ok": True}
         self.reports.append(body)
         return 200, {"ok": True}
 

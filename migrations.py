@@ -276,4 +276,21 @@ MIGRATIONS = [
             AND ((campaign_id = '1881634554090609' AND campaign_name = 'tashafrh')
               OR (campaign_id = '1882182698757202' AND campaign_name = 'nazifaiskandar')));
     """),
+    # Daily LIVE GMV Max history for the app (one row per approved campaign per Malaysia day).
+    ("011_scheduler_live_daily", """
+        CREATE TABLE IF NOT EXISTS sched_live_daily (
+            campaign_id TEXT NOT NULL CHECK (campaign_id IN ('1881634554090609', '1882182698757202')),
+            day DATE NOT NULL,
+            cost NUMERIC(12, 2) NOT NULL DEFAULT 0,
+            gmv NUMERIC(12, 2) NOT NULL DEFAULT 0,
+            orders INTEGER NOT NULL DEFAULT 0,
+            live_views INTEGER,
+            views_10s INTEGER,
+            follows INTEGER,
+            live_minutes INTEGER NOT NULL DEFAULT 0,
+            sessions INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (campaign_id, day)
+        );
+    """),
 ]
