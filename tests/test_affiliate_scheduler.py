@@ -184,7 +184,7 @@ def test_api_status_and_campaigns(env, device):
     st = env.get("/api/scheduler/v1/status", headers=device).json
     assert st["live_enabled"] is False and st["mode"] == "DRY_RUN" and st["tiktok"]["state"] == "NOT_CONNECTED"
     camps = env.get("/api/scheduler/v1/campaigns", headers=device).json["campaigns"]
-    assert [c["campaign_id"] for c in camps] == [APPROVED, "1882182698757202"]
+    assert [c["campaign_id"] for c in camps] == [APPROVED, "1882182698757202", "1882889601684577"]
 
 
 # ------------------------------------------------------------------ claiming
@@ -598,7 +598,7 @@ def test_runner_reports_live_stats_read_only():
     assert runner.run(p, armed_env=True, run_id="t", http=tk) == 0
     assert tk.writes() == []
     assert {c[0] for c in tk.calls} == {"campaign_gmv_max_info_get", "gmv_max_report_get"}
-    assert [r["campaign_id"] for r in p.reports] == [APPROVED, "1882182698757202"]
+    assert [r["campaign_id"] for r in p.reports] == [APPROVED, "1882182698757202", "1882889601684577"]
     st = p.reports[0]
     assert st["campaign_id"] == APPROVED and st["error"] == ""
     s = st["stats"]
@@ -639,21 +639,23 @@ def test_stats_endpoints(env, device):
 
 # ------------------------------------------------------------------ second affiliate: nazifaiskandar
 NAZIFA = "1882182698757202"
+FAIDI = "1882889601684577"
 
 
 def test_nazifa_listed_and_schedulable(env, device):
     names = {c["campaign_id"]: c["campaign_name"]
              for c in env.get("/api/scheduler/v1/campaigns", headers=device).json["campaigns"]}
-    assert names == {APPROVED: "tashafrh", NAZIFA: "nazifaiskandar"}
+    assert names == {APPROVED: "tashafrh", NAZIFA: "nazifaiskandar", FAIDI: "faidisini"}
     r = env.post("/api/scheduler/v1/schedules", json=payload(campaign_id=NAZIFA), headers=device)
     assert r.status_code == 201, r.json
     assert r.json["schedule"]["campaign_name"] == "nazifaiskandar"
     stats = {c["campaign_id"] for c in env.get("/api/scheduler/v1/stats", headers=device).json["campaigns"]}
-    assert stats == {APPROVED, NAZIFA}
+    assert stats == {APPROVED, NAZIFA, FAIDI}
 
 
 def test_db_lock_pairs_id_with_its_own_name(env):
-    for cid, name in [(NAZIFA, "tashafrh"), (APPROVED, "nazifaiskandar"), ("123", "nazifaiskandar")]:
+    for cid, name in [(NAZIFA, "tashafrh"), (APPROVED, "nazifaiskandar"), ("123", "nazifaiskandar"),
+                      (FAIDI, "nazifaiskandar"), (NAZIFA, "faidisini"), ("123", "faidisini")]:
         with conn() as c, pytest.raises(psycopg.errors.CheckViolation):
             c.execute("""INSERT INTO sched_schedules (advertiser_id, campaign_id, campaign_name, schedule_type,
                          live_date, live_start, live_end) VALUES (%s,%s,%s,'once','2026-11-20','17:00','19:00')""",
@@ -672,3 +674,29 @@ def test_migration_010_upgrades_existing_db(env):
         c.execute("""INSERT INTO sched_schedules (advertiser_id, campaign_id, campaign_name, schedule_type,
                      live_date, live_start, live_end) VALUES (%s,%s,'nazifaiskandar','once','2026-11-20','17:00','19:00')""",
                   (ADVERTISER_ID, NAZIFA))
+
+
+# ------------------------------------------------------------------ third affiliate: faidisini
+def test_faidisini_schedulable(env, device):
+    r = env.post("/api/scheduler/v1/schedules", json=payload(campaign_id=FAIDI), headers=device)
+    assert r.status_code == 201, r.json
+    assert r.json["schedule"]["campaign_name"] == "faidisini"
+
+
+def test_migration_012_upgrades_existing_db(env):
+    """Live DB has the two-affiliate locks from 010/011; 012 must widen both in place."""
+    from migrations import MIGRATIONS
+    with conn() as c:
+        c.execute("ALTER TABLE sched_schedules DROP CONSTRAINT sched_only_approved")
+        c.execute(dict(MIGRATIONS)["010_approve_nazifaiskandar"])
+        c.execute("ALTER TABLE sched_live_daily DROP CONSTRAINT sched_live_daily_campaign_id_check")
+        c.execute("""ALTER TABLE sched_live_daily ADD CONSTRAINT sched_live_daily_campaign_id_check
+                     CHECK (campaign_id IN ('1881634554090609', '1882182698757202'))""")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with c.transaction():
+                c.execute("INSERT INTO sched_live_daily (campaign_id, day) VALUES (%s, '2026-11-26')", (FAIDI,))
+        c.execute(dict(MIGRATIONS)["012_approve_faidisini"])
+        c.execute("INSERT INTO sched_live_daily (campaign_id, day) VALUES (%s, '2026-11-26')", (FAIDI,))
+        c.execute("""INSERT INTO sched_schedules (advertiser_id, campaign_id, campaign_name, schedule_type,
+                     live_date, live_start, live_end) VALUES (%s,%s,'faidisini','once','2026-11-27','21:00','23:00')""",
+                  (ADVERTISER_ID, FAIDI))

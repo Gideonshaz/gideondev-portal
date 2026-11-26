@@ -8,6 +8,7 @@ from affiliate_scheduler import live_history, mcp_client, runner
 from test_affiliate_scheduler import APPROVED, MCP, RUNNER_TOKEN, FakePortal, FakeTikTok, conn, device, env  # noqa: F401
 
 NAZIFA = "1882182698757202"
+FAIDI = "1882889601684577"
 NOW = datetime(2026, 11, 16, 15, 0, tzinfo=timezone.utc)      # 23:00 Malaysia time, 16 Nov
 
 
@@ -63,7 +64,7 @@ def test_history_endpoints(env, device):
     assert env.post("/api/scheduler/runner/history", headers=h,
                     json={"campaign_id": "1869666392557778", "rows": []}).status_code == 400
     assert env.post("/api/scheduler/runner/history-coverage", headers=h, json={}).json["campaigns"] == {
-        APPROVED: None, NAZIFA: None}
+        APPROVED: None, NAZIFA: None, FAIDI: None}
     rows = [{"day": "2026-11-15", "cost": 20, "gmv": 100, "orders": 4, "live_views": 500, "views_10s": 100,
              "follows": 2, "live_minutes": 120, "sessions": 1},
             {"day": "2026-11-16", "cost": 10, "gmv": 70, "orders": 6, "live_views": None, "views_10s": None,
