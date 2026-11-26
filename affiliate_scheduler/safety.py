@@ -14,6 +14,7 @@ PROTECTED_IDS = frozenset({
 APPROVED_AFFILIATES = {
     "1881634554090609": "tashafrh",
     "1882182698757202": "nazifaiskandar",
+    "1882889601684577": "faidisini",
 }
 
 @dataclass(frozen=True)

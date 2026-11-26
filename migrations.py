@@ -293,4 +293,16 @@ MIGRATIONS = [
             PRIMARY KEY (campaign_id, day)
         );
     """),
+    # Third approved affiliate: faidisini. DB locks widened to exactly these three.
+    ("012_approve_faidisini", """
+        ALTER TABLE sched_schedules DROP CONSTRAINT IF EXISTS sched_only_approved;
+        ALTER TABLE sched_schedules ADD CONSTRAINT sched_only_approved CHECK (
+            advertiser_id = '7657848009081946119'
+            AND ((campaign_id = '1881634554090609' AND campaign_name = 'tashafrh')
+              OR (campaign_id = '1882182698757202' AND campaign_name = 'nazifaiskandar')
+              OR (campaign_id = '1882889601684577' AND campaign_name = 'faidisini')));
+        ALTER TABLE sched_live_daily DROP CONSTRAINT IF EXISTS sched_live_daily_campaign_id_check;
+        ALTER TABLE sched_live_daily ADD CONSTRAINT sched_live_daily_campaign_id_check
+            CHECK (campaign_id IN ('1881634554090609', '1882182698757202', '1882889601684577'));
+    """),
 ]
