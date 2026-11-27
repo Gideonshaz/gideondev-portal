@@ -437,7 +437,8 @@ class FakeTikTok:
 class FakePortal:
     def __init__(self, ops, live=False, token_status=200):
         self.ops, self.live, self.token_status = ops, live, token_status
-        self.reports, self.history, self.coverage = [], [], {}
+        self.session_cov = {}
+        self.reports, self.history, self.coverage, self.sessions = [], [], {}, []
 
     def post(self, path, body):
         if path.endswith("/claim"):
@@ -447,9 +448,12 @@ class FakePortal:
                 return self.token_status, {"error": "TIKTOK_REAUTH_REQUIRED", "message": "renew"}
             return 200, {"access_token": "AT", "mcp_url": MCP}
         if path.endswith("/history-coverage"):
-            return 200, {"campaigns": self.coverage}
+            return 200, {"campaigns": self.coverage, "sessions": self.session_cov}
         if path.endswith("/history"):
             self.history.append(body)
+            return 200, {"ok": True}
+        if path.endswith("/sessions"):
+            self.sessions.append(body)
             return 200, {"ok": True}
         self.reports.append(body)
         return 200, {"ok": True}

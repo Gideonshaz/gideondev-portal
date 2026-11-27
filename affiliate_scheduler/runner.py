@@ -139,6 +139,15 @@ def report_history(portal, session, tools, auth_problem, now=None):
             rs, rb = portal.post("/api/scheduler/runner/history", {"campaign_id": cid, "rows": rows})
             log(event="history", campaign_id=cid, ok=rs == 200, days=len(rows), start=str(start),
                 error="" if rs == 200 else str(rb.get("message", ""))[:200])
+            # Per-LIVE figures for the morning report. Three days back so a LIVE from yesterday
+            # (and its late orders) is always read whole; everything since the start the first time.
+            s_start = today - datetime.timedelta(days=2)
+            if first_run and not (cov.get("sessions") or {}).get(cid):
+                s_start = min(s_start, max(first_run, today - datetime.timedelta(days=live_history.MAX_BACK)))
+            found = live_history.sessions(session, cid, store, s_start, today, now)
+            rs, rb = portal.post("/api/scheduler/runner/sessions", {"campaign_id": cid, "sessions": found})
+            log(event="sessions", campaign_id=cid, ok=rs == 200, sessions=len(found), start=str(s_start),
+                error="" if rs == 200 else str(rb.get("message", ""))[:200])
         except Exception as e:          # history must never break the scheduler
             log(event="history", campaign_id=cid, ok=False, error=str(e)[:300])
 
