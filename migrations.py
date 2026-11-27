@@ -305,4 +305,19 @@ MIGRATIONS = [
         ALTER TABLE sched_live_daily ADD CONSTRAINT sched_live_daily_campaign_id_check
             CHECK (campaign_id IN ('1881634554090609', '1882182698757202', '1882889601684577'));
     """),
+    # Per-LIVE GMV Max figures (one row per LIVE room) for the daily morning report.
+    ("013_scheduler_live_sessions", """
+        CREATE TABLE IF NOT EXISTS sched_live_sessions (
+            room_id TEXT PRIMARY KEY,
+            campaign_id TEXT NOT NULL CHECK (campaign_id IN ('1881634554090609', '1882182698757202', '1882889601684577')),
+            started_at TIMESTAMPTZ NOT NULL,
+            minutes INTEGER NOT NULL DEFAULT 0,
+            ongoing BOOLEAN NOT NULL DEFAULT false,
+            cost NUMERIC(12, 2) NOT NULL DEFAULT 0,
+            gmv NUMERIC(12, 2) NOT NULL DEFAULT 0,
+            orders INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS sched_live_sessions_started ON sched_live_sessions (started_at);
+    """),
 ]

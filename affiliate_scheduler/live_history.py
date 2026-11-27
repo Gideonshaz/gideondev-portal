@@ -102,3 +102,32 @@ def collect(session, campaign_id, store, start, end, now=None):
         row["live_minutes"] += mins
         row["sessions"] += 1
     return [days[k] for k in sorted(days)]
+
+
+SESSION_METRICS = ["live_status", "live_launched_time", "live_duration", "cost", "gross_revenue", "orders"]
+
+
+def sessions(session, campaign_id, store, start, end, now=None):
+    """One entry per LIVE room that ran with ads (or sold through the campaign) between start
+    and end: start time, minutes, still live?, and that LIVE's own cost / GMV / orders. These are
+    the per-LIVE figures the GMV Max dashboard shows, used for the morning report."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    rooms = _report(session, {"advertiser_id": ADVERTISER_ID, "store_ids": [store],
+                              "filtering": {"campaign_ids": [campaign_id]}, "page_size": 100,
+                              "start_date": start.isoformat(), "end_date": end.isoformat(),
+                              "dimensions": ["room_id"], "metrics": SESSION_METRICS})
+    out = []
+    for r in rooms:
+        m = r.get("metrics") or {}
+        room = str((r.get("dimensions") or {}).get("room_id", ""))
+        began = _utc(m.get("live_launched_time"))
+        cost, gmv = _num(m.get("cost")), _num(m.get("gross_revenue"))
+        if not room or not began or (cost <= 0 and gmv <= 0):
+            continue
+        mins = minutes(m.get("live_duration"))
+        ongoing = str(m.get("live_status", "")).upper() == "ONGOING" or mins is None
+        if mins is None:
+            mins = max(0, int((now - began).total_seconds() // 60))
+        out.append({"room_id": room, "started_at": began.isoformat(), "minutes": mins, "ongoing": ongoing,
+                    "cost": cost, "gmv": gmv, "orders": int(_num(m.get("orders")))})
+    return out

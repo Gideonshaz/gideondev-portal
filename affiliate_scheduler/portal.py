@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 
-from affiliate_scheduler import mcp_client, timing
+from affiliate_scheduler import mcp_client, morning_report, timing
 from affiliate_scheduler.safety import ADVERTISER_ID, APPROVED_AFFILIATES, PROTECTED_IDS
 
 bp = Blueprint("scheduler", __name__)
@@ -603,8 +603,79 @@ def runner_history_coverage():
     """Earliest stored day per campaign, so the runner knows whether to fill in the past."""
     with db() as conn:
         rows = conn.execute("SELECT campaign_id, min(day) FROM sched_live_daily GROUP BY campaign_id").fetchall()
+        sess = dict(conn.execute("SELECT campaign_id, count(*) FROM sched_live_sessions GROUP BY campaign_id").fetchall())
     found = {r[0]: r[1].isoformat() for r in rows}
-    return jsonify(campaigns={cid: found.get(cid) for cid in APPROVED_AFFILIATES})
+    return jsonify(campaigns={cid: found.get(cid) for cid in APPROVED_AFFILIATES},
+                   sessions={cid: sess.get(cid, 0) for cid in APPROVED_AFFILIATES})
+
+
+def _session_row(r):
+    try:
+        started = datetime.fromisoformat(str(r["started_at"]))
+        if started.tzinfo is None:
+            return None
+        out = {"room_id": str(r["room_id"])[:64], "started_at": started,
+               "minutes": max(0, min(int(r.get("minutes") or 0), 24 * 60)), "ongoing": bool(r.get("ongoing")),
+               "cost": round(float(r.get("cost") or 0), 2), "gmv": round(float(r.get("gmv") or 0), 2),
+               "orders": max(0, int(r.get("orders") or 0))}
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not out["room_id"] or not (0 <= out["cost"] < 10_000_000 and 0 <= out["gmv"] < 10_000_000):
+        return None
+    return out
+
+
+@bp.post("/api/scheduler/runner/sessions")
+@runner_api
+def runner_sessions():
+    """Per-LIVE figures from the scheduler run (read-only TikTok data). Upserts by room."""
+    b = request.get_json(silent=True) or {}
+    cid = str(b.get("campaign_id", ""))
+    if cid not in APPROVED_AFFILIATES:
+        return err("INVALID", "Not an approved campaign", 400)
+    raw = b.get("sessions")
+    if not isinstance(raw, list) or len(raw) > 1000:
+        return err("INVALID", "sessions must be a list (max 1000)", 400)
+    rows = [x for x in (_session_row(r) for r in raw if isinstance(r, dict)) if x]
+    with db() as conn:
+        for r in rows:
+            conn.execute("""INSERT INTO sched_live_sessions (room_id, campaign_id, started_at, minutes, ongoing,
+                                cost, gmv, orders, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
+                            ON CONFLICT (room_id) DO UPDATE SET started_at=EXCLUDED.started_at,
+                              minutes=EXCLUDED.minutes, ongoing=EXCLUDED.ongoing, cost=EXCLUDED.cost,
+                              gmv=EXCLUDED.gmv, orders=EXCLUDED.orders, updated_at=now()
+                            WHERE sched_live_sessions.campaign_id = EXCLUDED.campaign_id""",
+                         (r["room_id"], cid, r["started_at"], r["minutes"], r["ongoing"], r["cost"],
+                          r["gmv"], r["orders"]))
+    return jsonify(ok=True, saved=len(rows), skipped=len(raw) - len(rows))
+
+
+@bp.get("/api/scheduler/v1/morning-report")
+@device_api
+def api_morning_report():
+    """Ready-to-send LIVE Performance Report for one Malaysia day (default: yesterday)."""
+    today = now_utc().astimezone(timing.MYT).date()
+    try:
+        day = date.fromisoformat(request.args.get("date") or (today - timedelta(days=1)).isoformat())
+    except ValueError:
+        return err("INVALID", "Date must be YYYY-MM-DD", 400)
+    start = datetime.combine(day, datetime.min.time(), timing.MYT)
+    with db() as conn:
+        rows = conn.execute("""SELECT campaign_id, room_id, started_at, minutes, ongoing, cost, gmv, orders, updated_at
+                               FROM sched_live_sessions WHERE started_at >= %s AND started_at < %s
+                               ORDER BY started_at""", (start, start + timedelta(days=1))).fetchall()
+    found = []
+    for r in rows:
+        if r[0] not in APPROVED_AFFILIATES:
+            continue
+        found.append((APPROVED_AFFILIATES[r[0]], {"started_at": r[2], "minutes": r[3], "ongoing": r[4],
+                                                  "cost": float(r[5]), "gmv": float(r[6]), "orders": r[7],
+                                                  "updated_at": r[8]}))
+    return jsonify(date=day.isoformat(), text=morning_report.build(day, found),
+                   updated_at=iso(max(s["updated_at"] for _, s in found)) if found else None,
+                   lives=[{"campaign_name": n, "started_at": iso(s["started_at"]), "minutes": s["minutes"],
+                           "ongoing": s["ongoing"], "cost": s["cost"], "gmv": s["gmv"], "orders": s["orders"]}
+                          for n, s in found])
 
 
 @bp.post("/api/scheduler/runner/history")
